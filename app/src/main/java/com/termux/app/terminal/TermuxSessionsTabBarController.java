@@ -13,7 +13,7 @@ import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.TextView;
 
-import androidx.appcompat.app.AlertDialog;
+import android.app.AlertDialog;
 
 import com.termux.R;
 import com.termux.app.TermuxActivity;
@@ -25,7 +25,7 @@ import java.util.List;
 /**
  * Taskbar-like row of session tabs shown above the extra keys toolbar, so that sessions can be
  * switched without swiping in the left drawer from the screen edge (which conflicts with gesture
- * navigation). Hidden when there is only one session.
+ * navigation). Always visible so that the new session button is reachable.
  */
 public class TermuxSessionsTabBarController {
 
@@ -73,9 +73,8 @@ public class TermuxSessionsTabBarController {
     /** Rebuild the tabs from the current sessions list. Must be called on the main thread. */
     public void update() {
         int count = mSessions.size();
-        mBarRoot.setVisibility(count >= 2 ? View.VISIBLE : View.GONE);
+        mBarRoot.setVisibility(View.VISIBLE);
         mTabsContainer.removeAllViews();
-        if (count < 2) return;
 
         TerminalSession current = mActivity.getCurrentSession();
         float density = mActivity.getResources().getDisplayMetrics().density;
