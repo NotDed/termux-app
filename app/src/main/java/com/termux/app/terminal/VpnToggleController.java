@@ -11,7 +11,6 @@ import android.widget.TextView;
 
 import com.termux.R;
 import com.termux.app.TermuxActivity;
-import com.termux.shared.shell.TermuxShellUtils;
 import com.termux.shared.terminal.io.extrakeys.ExtraKeysStyle;
 import com.termux.shared.termux.TermuxConstants;
 
@@ -25,7 +24,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -55,11 +53,16 @@ public class VpnToggleController {
     private State mState = State.OFF;
     private boolean mCommandRunning;
     private boolean mPolling;
+    /** Runs once after the next successful "on" command, like opening an SSH host that needs the VPN. */
+    private Runnable mOnConnected;
+    /** Extra work to run on every poll tick, like refreshing the port forwards. */
+    private final java.util.List<Runnable> mTickListeners = new java.util.ArrayList<>();
 
     private final Runnable mPollRunnable = new Runnable() {
         @Override
         public void run() {
             refreshState();
+            for (Runnable listener : mTickListeners) listener.run();
             if (mPolling) mHandler.postDelayed(this, POLL_INTERVAL_MS);
         }
     };
@@ -106,6 +109,32 @@ public class VpnToggleController {
         }
     }
 
+    public void addTickListener(Runnable listener) {
+        mTickListeners.add(listener);
+    }
+
+    public boolean isOn() {
+        return mState == State.ON;
+    }
+
+    /** Connect the VPN (asking for the password) and run {@code then} once it is on. */
+    public void connectThen(Runnable then) {
+        if (mState == State.ON) {
+            then.run();
+            return;
+        }
+        if (mCommandRunning) {
+            mActivity.showToast(mActivity.getString(R.string.msg_vpn_busy), false);
+            return;
+        }
+        if (!new File(SCRIPT_PATH).isFile()) {
+            mActivity.showToast(mActivity.getString(R.string.msg_vpn_script_missing), true);
+            return;
+        }
+        mOnConnected = then;
+        askPasswordAndConnect();
+    }
+
     private void askPasswordAndConnect() {
         EditText input = new EditText(mActivity);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
@@ -126,7 +155,10 @@ public class VpnToggleController {
                 if (password.isEmpty()) return;
                 runScript("on", password);
             })
-            .setNegativeButton(android.R.string.cancel, (d, w) -> input.setText(""))
+            .setNegativeButton(android.R.string.cancel, (d, w) -> {
+                input.setText("");
+                mOnConnected = null;
+            })
             .create();
 
         input.setOnEditorActionListener((v, actionId, event) -> {
@@ -152,16 +184,8 @@ public class VpnToggleController {
             int exitCode;
             Deque<String> lastLines = new ArrayDeque<>();
             try {
-                ProcessBuilder builder = new ProcessBuilder(
+                ProcessBuilder builder = BackgroundShell.newProcessBuilder(mActivity,
                     TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + "/bash", SCRIPT_PATH, action);
-                builder.directory(new File(TermuxConstants.TERMUX_HOME_DIR_PATH));
-                builder.redirectErrorStream(true);
-                Map<String, String> env = builder.environment();
-                env.clear();
-                for (String entry : TermuxShellUtils.buildEnvironment(mActivity, false, TermuxConstants.TERMUX_HOME_DIR_PATH)) {
-                    int eq = entry.indexOf('=');
-                    if (eq > 0) env.put(entry.substring(0, eq), entry.substring(eq + 1));
-                }
 
                 Process process = builder.start();
                 try (OutputStream stdin = process.getOutputStream()) {
@@ -196,6 +220,12 @@ public class VpnToggleController {
             final String output = String.join("\n", lastLines);
             mHandler.post(() -> {
                 mCommandRunning = false;
+                Runnable onConnected = mOnConnected;
+                mOnConnected = null;
+                if (code == 0 && "on".equals(action) && onConnected != null) {
+                    applyState(State.ON);
+                    onConnected.run();
+                }
                 if (code == 0) {
                     mActivity.showToast(output.isEmpty() ? getStatusText() : lastLine(output), false);
                 } else {
@@ -253,7 +283,7 @@ public class VpnToggleController {
                 mButton.setBackground(ExtraKeysStyle.keyBackground(mActivity, ExtraKeysStyle.ACCENT_COLOR, 0));
                 break;
             case CONNECTING:
-                mButton.setText("vpn…");
+                mButton.setText("vpn");
                 mButton.setTextColor(CONNECTING_COLOR);
                 mButton.setBackground(ExtraKeysStyle.keyBackground(mActivity, ExtraKeysStyle.KEY_COLOR, CONNECTING_COLOR));
                 break;

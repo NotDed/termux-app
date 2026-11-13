@@ -337,11 +337,32 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
 
     /** Open a new session named after the host that runs {@code ssh <host>} and falls back to the
      * normal login shell once the connection ends. */
-    public void addNewSshSession(String host) {
-        if (!SshConfigHosts.isSafeHost(host)) return;
+    public TerminalSession addNewSshSession(String host) {
+        return addNewSshSession(host, false);
+    }
+
+    /**
+     * Open a new session for an SSH host.
+     *
+     * @param tmux Attach to (or create) the remote tmux session "main".
+     */
+    public TerminalSession addNewSshSession(String host, boolean tmux) {
+        if (!SshConfigHosts.isSafeHost(host)) return null;
         String bin = TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH;
-        addNewSession(false, host, bin + "/bash",
-            new String[]{"-c", bin + "/ssh -- " + host + "; exec " + bin + "/login"},
+        String ssh = tmux ? bin + "/ssh -t -- " + host + " 'tmux new -A -s main'" : bin + "/ssh -- " + host;
+        TerminalSession session = addNewSession(false, host, bin + "/bash",
+            new String[]{"-c", ssh + "; exec " + bin + "/login"},
+            TermuxConstants.TERMUX_HOME_DIR_PATH);
+        SessionMeta.putSsh(session, host, tmux);
+        termuxSessionListNotifyUpdated();
+        return session;
+    }
+
+    /** Open a new session editing {@code path} with the user's editor, then the login shell. */
+    public TerminalSession addNewEditorSession(String name, String path) {
+        String bin = TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH;
+        return addNewSession(false, name, bin + "/bash",
+            new String[]{"-c", bin + "/editor \"$0\"; exec " + bin + "/login", path},
             TermuxConstants.TERMUX_HOME_DIR_PATH);
     }
 
@@ -351,14 +372,16 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
      * @param executable The executable to run, or {@code null} for the default login shell.
      * @param arguments The arguments for the executable.
      * @param workingDirectory The working directory, or {@code null} for the current session's.
+     * @return The new session, or {@code null} if none was created.
      */
-    public void addNewSession(boolean isFailSafe, String sessionName, String executable, String[] arguments, String workingDirectory) {
+    public TerminalSession addNewSession(boolean isFailSafe, String sessionName, String executable, String[] arguments, String workingDirectory) {
         TermuxService service = mActivity.getTermuxService();
-        if (service == null) return;
+        if (service == null) return null;
 
         if (service.getTermuxSessionsSize() >= MAX_SESSIONS) {
             new AlertDialog.Builder(mActivity).setTitle(R.string.title_max_terminals_reached).setMessage(R.string.msg_max_terminals_reached)
                 .setPositiveButton(android.R.string.ok, null).show();
+            return null;
         } else {
             if (workingDirectory == null) {
                 TerminalSession currentSession = mActivity.getCurrentSession();
@@ -370,12 +393,13 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
             }
 
             TermuxSession newTermuxSession = service.createTermuxSession(executable, arguments, null, workingDirectory, isFailSafe, sessionName);
-            if (newTermuxSession == null) return;
+            if (newTermuxSession == null) return null;
 
             TerminalSession newTerminalSession = newTermuxSession.getTerminalSession();
             setCurrentSession(newTerminalSession);
 
             mActivity.getDrawer().closeDrawers();
+            return newTerminalSession;
         }
     }
 

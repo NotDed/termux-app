@@ -114,37 +114,74 @@
 
             <TextView
                 android:id="@+id/vpn_tab_button"
-                android:layout_width="44dp"
+                android:layout_width="36dp"
                 android:layout_height="match_parent"
                 android:gravity="center"
                 android:text="vpn"
                 android:textColor="#FF9A9AA2"
-                android:textSize="13sp"
+                android:textSize="12sp"
+                android:maxLines="1"
                 android:contentDescription="@string/action_vpn"
                 tools:ignore="HardcodedText" />
 
             <TextView
+                android:id="@+id/forwards_tab_button"
+                android:layout_width="36dp"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="⇄"
+                android:textColor="#FFECECEC"
+                android:textSize="15sp"
+                android:maxLines="1"
+                android:contentDescription="@string/action_forwards"
+                tools:ignore="HardcodedText" />
+
+            <TextView
+                android:id="@+id/snippets_tab_button"
+                android:layout_width="36dp"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="&gt;_"
+                android:textColor="#FFECECEC"
+                android:textSize="13sp"
+                android:maxLines="1"
+                android:contentDescription="@string/action_snippets"
+                tools:ignore="HardcodedText" />
+
+            <TextView
                 android:id="@+id/ssh_hosts_tab_button"
-                android:layout_width="44dp"
+                android:layout_width="36dp"
                 android:layout_height="match_parent"
                 android:gravity="center"
                 android:text="ssh"
                 android:textColor="#FFECECEC"
-                android:textSize="13sp"
+                android:textSize="12sp"
+                android:maxLines="1"
                 android:contentDescription="@string/action_ssh_hosts"
                 tools:ignore="HardcodedText" />
 
             <TextView
                 android:id="@+id/new_session_tab_button"
-                android:layout_width="40dp"
+                android:layout_width="36dp"
                 android:layout_height="match_parent"
-                android:layout_marginStart="1dp"
-                android:background="#FF2B2B30"
                 android:gravity="center"
                 android:text="+"
-                android:textColor="@android:color/white"
+                android:textColor="#FFFFFFFF"
                 android:textSize="18sp"
+                android:maxLines="1"
                 android:contentDescription="@string/action_new_session_tab"
+                tools:ignore="HardcodedText" />
+
+            <TextView
+                android:id="@+id/settings_tab_button"
+                android:layout_width="36dp"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="⚙"
+                android:textColor="#FF9A9AA2"
+                android:textSize="15sp"
+                android:maxLines="1"
+                android:contentDescription="@string/action_tabbar_settings"
                 tools:ignore="HardcodedText" />
 
         </com.termux.app.terminal.TermuxSessionsTabBarView>

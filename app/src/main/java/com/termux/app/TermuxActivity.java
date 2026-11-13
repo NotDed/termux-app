@@ -42,6 +42,7 @@ import com.termux.app.activities.SettingsActivity;
 import com.termux.shared.settings.preferences.TermuxAppSharedPreferences;
 import com.termux.app.terminal.TermuxSessionsListViewController;
 import com.termux.app.terminal.TermuxSessionsTabBarController;
+import com.termux.app.terminal.SessionRestore;
 import com.termux.app.terminal.io.TerminalToolbarViewPager;
 import com.termux.app.terminal.TermuxTerminalSessionClient;
 import com.termux.app.terminal.TermuxTerminalViewClient;
@@ -380,7 +381,14 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
                         if (bundle != null) {
                             launchFailsafe = bundle.getBoolean(TERMUX_ACTIVITY.EXTRA_FAILSAFE_SESSION, false);
                         }
-                        mTermuxTerminalSessionClient.addNewSession(launchFailsafe, null);
+                        final boolean failsafe = launchFailsafe;
+                        if (failsafe) {
+                            mTermuxTerminalSessionClient.addNewSession(true, null);
+                            SessionRestore.markReady();
+                        } else {
+                            SessionRestore.offerOrStart(TermuxActivity.this, mTermuxTerminalSessionClient,
+                                () -> mTermuxTerminalSessionClient.addNewSession(false, null));
+                        }
                     } catch (WindowManager.BadTokenException e) {
                         // Activity finished - ignore.
                     }
@@ -390,6 +398,8 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
                 finishActivityIfNotFinishing();
             }
         } else {
+            // Sessions are already running, so this is not a fresh start
+            SessionRestore.markReady();
             Intent i = getIntent();
             if (i != null && Intent.ACTION_RUN.equals(i.getAction())) {
                 // Android 7.1 app shortcut from res/xml/shortcuts.xml.
