@@ -44,6 +44,7 @@ import com.termux.app.activities.SettingsActivity;
 import com.termux.shared.termux.crash.TermuxCrashUtils;
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences;
 import com.termux.app.terminal.TermuxSessionsListViewController;
+import com.termux.app.terminal.TermuxSessionsTabBarController;
 import com.termux.app.terminal.io.TerminalToolbarViewPager;
 import com.termux.app.terminal.TermuxTerminalViewClient;
 import com.termux.shared.termux.extrakeys.ExtraKeysView;
@@ -137,6 +138,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
      * The termux sessions list controller.
      */
     TermuxSessionsListViewController mTermuxSessionListViewController;
+
+    /**
+     * The taskbar-like {@link TermuxSessionsTabBarController} shown above the extra keys.
+     */
+    TermuxSessionsTabBarController mTermuxSessionsTabBarController;
 
     /**
      * The {@link TermuxActivity} broadcast receiver for various things like terminal style configuration changes.
@@ -503,6 +509,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         termuxSessionsListView.setAdapter(mTermuxSessionListViewController);
         termuxSessionsListView.setOnItemClickListener(mTermuxSessionListViewController);
         termuxSessionsListView.setOnItemLongClickListener(mTermuxSessionListViewController);
+
+        mTermuxSessionsTabBarController = new TermuxSessionsTabBarController(this,
+            mTermuxService.getTermuxSessions(), findViewById(R.id.terminal_sessions_tab_bar));
     }
 
 
@@ -856,7 +865,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
 
     public void termuxSessionListNotifyUpdated() {
-        mTermuxSessionListViewController.notifyDataSetChanged();
+        if (mTermuxSessionListViewController != null)
+            mTermuxSessionListViewController.notifyDataSetChanged();
+        if (mTermuxSessionsTabBarController != null)
+            mTermuxSessionsTabBarController.update();
     }
 
     public boolean isVisible() {
