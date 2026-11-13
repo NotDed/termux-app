@@ -113,6 +113,17 @@
                 android:orientation="horizontal" />
 
             <TextView
+                android:id="@+id/ssh_hosts_tab_button"
+                android:layout_width="44dp"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="ssh"
+                android:textColor="#FFECECEC"
+                android:textSize="13sp"
+                android:contentDescription="@string/action_ssh_hosts"
+                tools:ignore="HardcodedText" />
+
+            <TextView
                 android:id="@+id/new_session_tab_button"
                 android:layout_width="40dp"
                 android:layout_height="match_parent"

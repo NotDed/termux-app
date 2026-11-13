@@ -332,6 +332,27 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
     }
 
     public void addNewSession(boolean isFailSafe, String sessionName) {
+        addNewSession(isFailSafe, sessionName, null, null, null);
+    }
+
+    /** Open a new session named after the host that runs {@code ssh <host>} and falls back to the
+     * normal login shell once the connection ends. */
+    public void addNewSshSession(String host) {
+        if (!SshConfigHosts.isSafeHost(host)) return;
+        String bin = TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH;
+        addNewSession(false, host, bin + "/bash",
+            new String[]{"-c", bin + "/ssh -- " + host + "; exec " + bin + "/login"},
+            TermuxConstants.TERMUX_HOME_DIR_PATH);
+    }
+
+    /**
+     * Open a new session.
+     *
+     * @param executable The executable to run, or {@code null} for the default login shell.
+     * @param arguments The arguments for the executable.
+     * @param workingDirectory The working directory, or {@code null} for the current session's.
+     */
+    public void addNewSession(boolean isFailSafe, String sessionName, String executable, String[] arguments, String workingDirectory) {
         TermuxService service = mActivity.getTermuxService();
         if (service == null) return;
 
@@ -339,16 +360,16 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
             new AlertDialog.Builder(mActivity).setTitle(R.string.title_max_terminals_reached).setMessage(R.string.msg_max_terminals_reached)
                 .setPositiveButton(android.R.string.ok, null).show();
         } else {
-            TerminalSession currentSession = mActivity.getCurrentSession();
-
-            String workingDirectory;
-            if (currentSession == null) {
-                workingDirectory = mActivity.getProperties().getDefaultWorkingDirectory();
-            } else {
-                workingDirectory = currentSession.getCwd();
+            if (workingDirectory == null) {
+                TerminalSession currentSession = mActivity.getCurrentSession();
+                if (currentSession == null) {
+                    workingDirectory = mActivity.getProperties().getDefaultWorkingDirectory();
+                } else {
+                    workingDirectory = currentSession.getCwd();
+                }
             }
 
-            TermuxSession newTermuxSession = service.createTermuxSession(null, null, null, workingDirectory, isFailSafe, sessionName);
+            TermuxSession newTermuxSession = service.createTermuxSession(executable, arguments, null, workingDirectory, isFailSafe, sessionName);
             if (newTermuxSession == null) return;
 
             TerminalSession newTerminalSession = newTermuxSession.getTerminalSession();

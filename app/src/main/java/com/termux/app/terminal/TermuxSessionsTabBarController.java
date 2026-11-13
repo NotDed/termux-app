@@ -56,6 +56,14 @@ public class TermuxSessionsTabBarController {
 
         barRoot.setBackgroundColor(ExtraKeysStyle.PANEL_COLOR);
 
+        View sshButton = barRoot.findViewById(R.id.ssh_hosts_tab_button);
+        sshButton.setBackground(ExtraKeysStyle.keyBackground(mActivity, ExtraKeysStyle.KEY_COLOR, 0));
+        sshButton.setOnClickListener(this::showSshHostsMenu);
+        sshButton.setOnLongClickListener(v -> {
+            mActivity.showToast(mActivity.getString(R.string.msg_ssh_hosts_source), false);
+            return true;
+        });
+
         View newSessionButton = barRoot.findViewById(R.id.new_session_tab_button);
         newSessionButton.setBackground(ExtraKeysStyle.keyBackground(mActivity, ExtraKeysStyle.KEY_COLOR, 0));
         newSessionButton.setOnClickListener(v -> {
@@ -130,6 +138,26 @@ public class TermuxSessionsTabBarController {
         String title = session.getTitle();
         String label = !TextUtils.isEmpty(name) ? name : (!TextUtils.isEmpty(title) ? title : "");
         return (index + 1) + (label.isEmpty() ? "" : " " + label);
+    }
+
+    /** Show the hosts from ~/.ssh/config and open the chosen one in a new session. */
+    private void showSshHostsMenu(View anchor) {
+        List<String> hosts = SshConfigHosts.read();
+        PopupMenu popup = new PopupMenu(mActivity, anchor);
+        if (hosts.isEmpty()) {
+            popup.getMenu().add(R.string.msg_no_ssh_hosts).setEnabled(false);
+        } else {
+            for (int i = 0; i < hosts.size(); i++)
+                popup.getMenu().add(0, i, i, hosts.get(i));
+        }
+        popup.setOnMenuItemClickListener(item -> {
+            int index = item.getItemId();
+            if (index < 0 || index >= hosts.size()) return true;
+            TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
+            if (client != null) client.addNewSshSession(hosts.get(index));
+            return true;
+        });
+        popup.show();
     }
 
     private void showTabMenu(View anchor, TerminalSession session) {
