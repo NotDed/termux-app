@@ -45,6 +45,10 @@
 
     <string name="title_rename_session">Set session name</string>
     <string name="action_rename_session_confirm">Set</string>
+    <string name="action_rename_session">Rename</string>
+    <string name="action_close_session">Close</string>
+    <string name="msg_close_session_confirm">This session is still running. Kill it and close it?</string>
+    <string name="action_new_session_tab">New session (long press for failsafe)</string>
     <string name="title_create_named_session">New named session</string>
     <string name="action_create_named_session_confirm">Create</string>
 

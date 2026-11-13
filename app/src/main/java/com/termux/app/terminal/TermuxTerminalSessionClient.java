@@ -280,6 +280,9 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
         // be stale, like current session not selected or scrolled to.
         checkAndScrollToSession(session);
         updateBackgroundColor();
+
+        // Keep the session tab bar highlight in sync with the displayed session
+        termuxSessionListNotifyUpdated();
     }
 
     void notifyOfSessionChange() {
