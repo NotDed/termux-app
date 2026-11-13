@@ -17,7 +17,7 @@ import androidx.appcompat.app.AlertDialog;
 
 import com.termux.R;
 import com.termux.app.TermuxActivity;
-import com.termux.shared.termux.shell.command.runner.terminal.TermuxSession;
+import com.termux.shared.shell.TermuxSession;
 import com.termux.terminal.TerminalSession;
 
 import java.util.List;
@@ -51,18 +51,18 @@ public class TermuxSessionsTabBarController {
 
         if (barRoot instanceof TermuxSessionsTabBarView) {
             ((TermuxSessionsTabBarView) barRoot).setSwipeListener(forward -> {
-                TermuxTerminalSessionActivityClient client = mActivity.getTermuxTerminalSessionClient();
+                TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
                 if (client != null) client.switchToSession(forward);
             });
         }
 
         View newSessionButton = barRoot.findViewById(R.id.new_session_tab_button);
         newSessionButton.setOnClickListener(v -> {
-            TermuxTerminalSessionActivityClient client = mActivity.getTermuxTerminalSessionClient();
+            TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
             if (client != null) client.addNewSession(false, null);
         });
         newSessionButton.setOnLongClickListener(v -> {
-            TermuxTerminalSessionActivityClient client = mActivity.getTermuxTerminalSessionClient();
+            TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
             if (client != null) client.addNewSession(true, "Failsafe");
             return true;
         });
@@ -113,7 +113,7 @@ public class TermuxSessionsTabBarController {
             tab.setTextColor(textColor);
 
             tab.setOnClickListener(v -> {
-                TermuxTerminalSessionActivityClient client = mActivity.getTermuxTerminalSessionClient();
+                TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
                 if (client != null) client.setCurrentSession(session);
             });
             tab.setOnLongClickListener(v -> {
@@ -137,7 +137,7 @@ public class TermuxSessionsTabBarController {
         popup.getMenu().add(0, 1, 0, R.string.action_rename_session);
         popup.getMenu().add(0, 2, 1, R.string.action_close_session);
         popup.setOnMenuItemClickListener(item -> {
-            TermuxTerminalSessionActivityClient client = mActivity.getTermuxTerminalSessionClient();
+            TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
             if (client == null) return true;
             if (item.getItemId() == 1) {
                 client.renameSession(session);
@@ -168,7 +168,7 @@ public class TermuxSessionsTabBarController {
 
     /** The session is only marked finished once its process exit is processed, so poll briefly. */
     private void removeWhenFinished(TerminalSession session, int tries) {
-        TermuxTerminalSessionActivityClient client = mActivity.getTermuxTerminalSessionClient();
+        TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
         if (client == null) return;
         if (!session.isRunning()) {
             client.removeFinishedSession(session);
