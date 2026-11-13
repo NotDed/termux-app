@@ -39,11 +39,21 @@ public class SpecialButtonState {
     public void setIsActive(boolean value) {
         isActive = value;
         buttons.forEach(button -> button.setTextColor(value ? mExtraKeysView.getButtonActiveTextColor() : mExtraKeysView.getButtonTextColor()));
+        updateKeyCaps();
     }
 
     /** Set {@link #isLocked}. */
     public void setIsLocked(boolean value) {
         isLocked = value;
+        updateKeyCaps();
+    }
+
+    /** Show the active/locked state on keycap buttons. */
+    private void updateKeyCaps() {
+        for (Button button : buttons) {
+            if (button instanceof ExtraKeyCapView)
+                ((ExtraKeyCapView) button).setModifierState(isActive, isLocked);
+        }
     }
 
 }

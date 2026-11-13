@@ -18,6 +18,7 @@ import android.app.AlertDialog;
 import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.shared.shell.TermuxSession;
+import com.termux.shared.terminal.io.extrakeys.ExtraKeysStyle;
 import com.termux.terminal.TerminalSession;
 
 import java.util.List;
@@ -29,9 +30,6 @@ import java.util.List;
  */
 public class TermuxSessionsTabBarController {
 
-    private static final int COLOR_TAB_ACTIVE = 0xFF3A3A3A;
-    private static final int COLOR_TAB_INACTIVE = 0xFF141414;
-    private static final int COLOR_TEXT_INACTIVE = 0xFFB0B0B0;
 
     /** How long to wait for a killed session to actually exit before removing it. */
     private static final int CLOSE_POLL_INTERVAL_MS = 50;
@@ -56,7 +54,10 @@ public class TermuxSessionsTabBarController {
             });
         }
 
+        barRoot.setBackgroundColor(ExtraKeysStyle.PANEL_COLOR);
+
         View newSessionButton = barRoot.findViewById(R.id.new_session_tab_button);
+        newSessionButton.setBackground(ExtraKeysStyle.keyBackground(mActivity, ExtraKeysStyle.KEY_COLOR, 0));
         newSessionButton.setOnClickListener(v -> {
             TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
             if (client != null) client.addNewSession(false, null);
@@ -78,7 +79,6 @@ public class TermuxSessionsTabBarController {
 
         TerminalSession current = mActivity.getCurrentSession();
         float density = mActivity.getResources().getDisplayMetrics().density;
-        int margin = Math.round(density);
         int padding = Math.round(4 * density);
 
         for (int i = 0; i < count; i++) {
@@ -88,7 +88,6 @@ public class TermuxSessionsTabBarController {
 
             TextView tab = new TextView(mActivity);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-            params.setMargins(margin, 0, margin, 0);
             tab.setLayoutParams(params);
             tab.setGravity(Gravity.CENTER);
             tab.setPadding(padding, 0, padding, 0);
@@ -98,7 +97,9 @@ public class TermuxSessionsTabBarController {
             tab.setText(getTabTitle(i, session));
 
             boolean isCurrent = session == current;
-            tab.setBackgroundColor(isCurrent ? COLOR_TAB_ACTIVE : COLOR_TAB_INACTIVE);
+            tab.setBackground(ExtraKeysStyle.keyBackground(mActivity,
+                isCurrent ? ExtraKeysStyle.KEY_PRESSED_COLOR : ExtraKeysStyle.KEY_COLOR,
+                isCurrent ? ExtraKeysStyle.ACCENT_COLOR : 0));
             tab.setTypeface(null, isCurrent ? Typeface.BOLD : Typeface.NORMAL);
 
             boolean running = session.isRunning();
@@ -107,7 +108,7 @@ public class TermuxSessionsTabBarController {
             else
                 tab.setPaintFlags(tab.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG);
 
-            int textColor = isCurrent ? Color.WHITE : COLOR_TEXT_INACTIVE;
+            int textColor = isCurrent ? Color.WHITE : ExtraKeysStyle.KEY_HINT_TEXT_COLOR;
             if (!running && session.getExitStatus() != 0) textColor = Color.RED;
             tab.setTextColor(textColor);
 

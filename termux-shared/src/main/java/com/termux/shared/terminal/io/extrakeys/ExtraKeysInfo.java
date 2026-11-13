@@ -204,7 +204,8 @@ public class ExtraKeysInfo {
             case "none":
                 return new ExtraKeysConstants.ExtraKeyDisplayMap();
             default:
-                return EXTRA_KEY_DISPLAY_MAPS.DEFAULT_CHAR_DISPLAY;
+                // Show nav keys like HOME/END/PGUP/PGDN as symbols too
+                return EXTRA_KEY_DISPLAY_MAPS.LOTS_OF_ARROWS_CHAR_DISPLAY;
         }
     }
 
