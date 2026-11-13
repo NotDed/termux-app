@@ -264,6 +264,9 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
 
         Logger.logDebug(LOG_TAG, "onStart");
 
+        if (mTermuxSessionsTabBarController != null)
+            mTermuxSessionsTabBarController.onStart();
+
         if (mIsInvalidState) return;
 
         mIsVisible = true;
@@ -302,6 +305,9 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
         super.onStop();
 
         Logger.logDebug(LOG_TAG, "onStop");
+
+        if (mTermuxSessionsTabBarController != null)
+            mTermuxSessionsTabBarController.onStop();
 
         if (mIsInvalidState) return;
 
@@ -472,6 +478,9 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
 
         mTermuxSessionsTabBarController = new TermuxSessionsTabBarController(this,
             mTermuxService.getTermuxSessions(), findViewById(R.id.terminal_sessions_tab_bar));
+        // The controller is created after onStart() when the service connects
+        if (isVisible())
+            mTermuxSessionsTabBarController.onStart();
     }
 
 

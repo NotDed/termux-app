@@ -48,6 +48,17 @@
     <string name="action_rename_session">Rename</string>
     <string name="action_close_session">Close</string>
     <string name="msg_close_session_confirm">This session is still running. Kill it and close it?</string>
+    <string name="action_vpn">VPN on/off</string>
+    <string name="title_vpn_password">VPN password</string>
+    <string name="action_vpn_connect">Connect</string>
+    <string name="action_vpn_disconnect">Turn off</string>
+    <string name="msg_vpn_off_confirm">Turn VPN off?</string>
+    <string name="msg_vpn_script_missing">~/connect-vpn-termux.sh not found</string>
+    <string name="msg_vpn_busy">VPN command still running…</string>
+    <string name="msg_vpn_failed">VPN command failed</string>
+    <string name="msg_vpn_status_on">VPN on: SOCKS proxy at 127.0.0.1:%1$d</string>
+    <string name="msg_vpn_status_connecting">VPN connecting…</string>
+    <string name="msg_vpn_status_off">VPN off</string>
     <string name="action_ssh_hosts">SSH hosts</string>
     <string name="msg_no_ssh_hosts">No hosts in ~/.ssh/config</string>
     <string name="msg_ssh_hosts_source">Hosts are read from ~/.ssh/config</string>

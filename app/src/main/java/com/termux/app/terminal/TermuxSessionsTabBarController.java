@@ -40,6 +40,7 @@ public class TermuxSessionsTabBarController {
     private final View mBarRoot;
     private final LinearLayout mTabsContainer;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
+    private final VpnToggleController mVpnToggleController;
 
     public TermuxSessionsTabBarController(TermuxActivity activity, List<TermuxSession> sessions, View barRoot) {
         mActivity = activity;
@@ -55,6 +56,8 @@ public class TermuxSessionsTabBarController {
         }
 
         barRoot.setBackgroundColor(ExtraKeysStyle.PANEL_COLOR);
+
+        mVpnToggleController = new VpnToggleController(mActivity, barRoot.findViewById(R.id.vpn_tab_button));
 
         View sshButton = barRoot.findViewById(R.id.ssh_hosts_tab_button);
         sshButton.setBackground(ExtraKeysStyle.keyBackground(mActivity, ExtraKeysStyle.KEY_COLOR, 0));
@@ -77,6 +80,15 @@ public class TermuxSessionsTabBarController {
         });
 
         update();
+    }
+
+    /** Start refreshing the VPN button state while the activity is visible. */
+    public void onStart() {
+        mVpnToggleController.startPolling();
+    }
+
+    public void onStop() {
+        mVpnToggleController.stopPolling();
     }
 
     /** Rebuild the tabs from the current sessions list. Must be called on the main thread. */
