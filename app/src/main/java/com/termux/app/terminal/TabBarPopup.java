@@ -48,6 +48,7 @@ final class TabBarPopup {
 
     private final Context mContext;
     private final LinearLayout mList;
+    private final int mHeaderCount;
     private final PopupWindow mWindow;
     private int mRowCount;
 
@@ -67,6 +68,8 @@ final class TabBarPopup {
             titleView.setPadding(dp(10), dp(4), dp(10), dp(6));
             mList.addView(titleView);
         }
+
+        mHeaderCount = mList.getChildCount();
 
         ScrollView scroll = new ScrollView(context);
         scroll.addView(mList);
@@ -161,6 +164,71 @@ final class TabBarPopup {
         Row handle = new Row(dot, sub);
         handle.setSubtitle(subtitle);
         return handle;
+    }
+
+    /** Remove all rows, keeping the title, so the content can be rebuilt while showing. */
+    void clearRows() {
+        mList.removeViews(mHeaderCount, mList.getChildCount() - mHeaderCount);
+        mRowCount = 0;
+    }
+
+    /** Add a row with a label, a percent and a bar showing that percent. */
+    void addMeterRow(String label, int percent, @Nullable String subtitle, int color) {
+        int clamped = Math.max(0, Math.min(100, percent));
+
+        LinearLayout row = new LinearLayout(mContext);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(dp(12), dp(8), dp(12), dp(8));
+        row.setBackground(ExtraKeysStyle.keyBackground(mContext, ExtraKeysStyle.KEY_COLOR, 0));
+
+        LinearLayout top = new LinearLayout(mContext);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        TextView labelView = new TextView(mContext);
+        labelView.setText(label);
+        labelView.setTextColor(ExtraKeysStyle.KEY_TEXT_COLOR);
+        labelView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        labelView.setSingleLine(true);
+        labelView.setEllipsize(TextUtils.TruncateAt.END);
+        top.addView(labelView, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView percentView = new TextView(mContext);
+        percentView.setText(clamped + "%");
+        percentView.setTextColor(color);
+        percentView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        percentView.setTypeface(null, android.graphics.Typeface.BOLD);
+        top.addView(percentView);
+        row.addView(top);
+
+        // Bar: a track with a filled part sized by weight
+        LinearLayout track = new LinearLayout(mContext);
+        track.setOrientation(LinearLayout.HORIZONTAL);
+        GradientDrawable trackShape = new GradientDrawable();
+        trackShape.setColor(ExtraKeysStyle.KEY_PRESSED_COLOR);
+        trackShape.setCornerRadius(dp(2));
+        track.setBackground(trackShape);
+        track.setWeightSum(100f);
+        if (clamped > 0) {
+            View fill = new View(mContext);
+            GradientDrawable fillShape = new GradientDrawable();
+            fillShape.setColor(color);
+            fillShape.setCornerRadius(dp(2));
+            fill.setBackground(fillShape);
+            track.addView(fill, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, clamped));
+        }
+        LinearLayout.LayoutParams trackParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(4));
+        trackParams.topMargin = dp(6);
+        row.addView(track, trackParams);
+
+        if (!TextUtils.isEmpty(subtitle)) {
+            TextView sub = new TextView(mContext);
+            sub.setText(subtitle);
+            sub.setTextColor(ExtraKeysStyle.KEY_HINT_TEXT_COLOR);
+            sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+            sub.setPadding(0, dp(4), 0, 0);
+            row.addView(sub);
+        }
+
+        mList.addView(row, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        mRowCount++;
     }
 
     /** Show the popup above {@code anchor}, right-aligned with it and kept on screen. */

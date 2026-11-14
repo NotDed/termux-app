@@ -9,6 +9,7 @@ import com.termux.R;
 /** On/off switches for the tab bar features, toggled from the tab bar's settings key. */
 public final class TabBarFeatures {
 
+    public static final String CLAUDE_USAGE = "claude_usage";
     public static final String VPN = "vpn";
     public static final String FORWARDS = "forwards";
     public static final String SNIPPETS = "snippets";
@@ -17,8 +18,8 @@ public final class TabBarFeatures {
     public static final String HOST_COLORS = "host_colors";
     public static final String SESSION_RESTORE = "session_restore";
 
-    private static final String[] KEYS = {VPN, FORWARDS, SNIPPETS, SSH, SSH_REACHABILITY, HOST_COLORS, SESSION_RESTORE};
-    private static final int[] LABELS = {R.string.feature_vpn, R.string.feature_forwards, R.string.feature_snippets,
+    private static final String[] KEYS = {CLAUDE_USAGE, VPN, FORWARDS, SNIPPETS, SSH, SSH_REACHABILITY, HOST_COLORS, SESSION_RESTORE};
+    private static final int[] LABELS = {R.string.feature_claude_usage, R.string.feature_vpn, R.string.feature_forwards, R.string.feature_snippets,
         R.string.feature_ssh, R.string.feature_ssh_reachability, R.string.feature_host_colors, R.string.feature_session_restore};
 
     private static final String PREFS_NAME = "tabbar_features";

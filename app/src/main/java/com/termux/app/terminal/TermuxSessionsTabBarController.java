@@ -53,6 +53,8 @@ public class TermuxSessionsTabBarController {
 
     private final VpnToggleController mVpnToggleController;
     private final ForwardsController mForwardsController;
+    private final ClaudeUsageController mClaudeUsageController;
+    private final TextView mClaudeUsageButton;
     private final TextView mVpnButton;
     private final TextView mForwardsButton;
     private final View mSnippetsButton;
@@ -77,6 +79,12 @@ public class TermuxSessionsTabBarController {
 
         mVpnButton = barRoot.findViewById(R.id.vpn_tab_button);
         mVpnToggleController = new VpnToggleController(mActivity, mVpnButton);
+
+        mClaudeUsageButton = barRoot.findViewById(R.id.claude_usage_tab_button);
+        mClaudeUsageController = new ClaudeUsageController(mActivity, mClaudeUsageButton);
+        mVpnToggleController.addTickListener(() -> {
+            if (TabBarFeatures.isEnabled(mActivity, TabBarFeatures.CLAUDE_USAGE)) mClaudeUsageController.onTick();
+        });
 
         mForwardsButton = barRoot.findViewById(R.id.forwards_tab_button);
         mForwardsController = new ForwardsController(mActivity, mForwardsButton,
@@ -126,6 +134,7 @@ public class TermuxSessionsTabBarController {
 
     /** Show or hide keys according to the enabled features and redraw the tabs. */
     public void applyFeatures() {
+        mClaudeUsageButton.setVisibility(TabBarFeatures.isEnabled(mActivity, TabBarFeatures.CLAUDE_USAGE) ? View.VISIBLE : View.GONE);
         mVpnButton.setVisibility(TabBarFeatures.isEnabled(mActivity, TabBarFeatures.VPN) ? View.VISIBLE : View.GONE);
         mForwardsButton.setVisibility(TabBarFeatures.isEnabled(mActivity, TabBarFeatures.FORWARDS) ? View.VISIBLE : View.GONE);
         mSnippetsButton.setVisibility(TabBarFeatures.isEnabled(mActivity, TabBarFeatures.SNIPPETS) ? View.VISIBLE : View.GONE);

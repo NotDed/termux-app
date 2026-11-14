@@ -113,6 +113,18 @@
                 android:orientation="horizontal" />
 
             <TextView
+                android:id="@+id/claude_usage_tab_button"
+                android:layout_width="40dp"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="✳"
+                android:textColor="#FFECECEC"
+                android:textSize="12sp"
+                android:maxLines="1"
+                android:contentDescription="@string/action_claude_usage"
+                tools:ignore="HardcodedText" />
+
+            <TextView
                 android:id="@+id/vpn_tab_button"
                 android:layout_width="36dp"
                 android:layout_height="match_parent"

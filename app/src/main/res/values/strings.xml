@@ -48,6 +48,16 @@
     <string name="action_rename_session">Rename</string>
     <string name="action_close_session">Close</string>
     <string name="msg_close_session_confirm">This session is still running. Kill it and close it?</string>
+    <string name="action_claude_usage">Claude usage</string>
+    <string name="feature_claude_usage">Claude usage</string>
+    <string name="title_claude_usage">Claude usage</string>
+    <string name="msg_claude_usage_loading">Loading…</string>
+    <string name="msg_claude_usage_refreshing">Refreshing…</string>
+    <string name="msg_claude_usage_updated">Updated %1$s · tap to refresh</string>
+    <string name="action_claude_usage_retry">Tap to try again</string>
+    <string name="msg_claude_usage_not_logged_in">Not logged in. Run claude and log in first.</string>
+    <string name="msg_claude_usage_token_expired">Login token expired. Open claude once to refresh it.</string>
+    <string name="msg_claude_usage_error">Could not load usage (%1$s)</string>
     <string name="action_forwards">Port forwards</string>
     <string name="action_snippets">Snippets</string>
     <string name="action_tabbar_settings">Tab bar features</string>
