@@ -1,6 +1,5 @@
 package com.termux.app.terminal;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 
@@ -18,10 +17,6 @@ public final class TabBarFeatures {
     public static final String HOST_COLORS = "host_colors";
     public static final String SESSION_RESTORE = "session_restore";
 
-    private static final String[] KEYS = {CLAUDE_USAGE, VPN, FORWARDS, SNIPPETS, SSH, SSH_REACHABILITY, HOST_COLORS, SESSION_RESTORE};
-    private static final int[] LABELS = {R.string.feature_claude_usage, R.string.feature_vpn, R.string.feature_forwards, R.string.feature_snippets,
-        R.string.feature_ssh, R.string.feature_ssh_reachability, R.string.feature_host_colors, R.string.feature_session_restore};
-
     private static final String PREFS_NAME = "tabbar_features";
 
     private TabBarFeatures() {}
@@ -34,23 +29,39 @@ public final class TabBarFeatures {
         return prefs(context).getBoolean(key, true);
     }
 
-    /** Show the features checklist. {@code onChanged} runs after every change. */
+    /** Show the features panel. {@code onChanged} runs after every change. */
     public static void showDialog(Context context, Runnable onChanged) {
-        String[] labels = new String[KEYS.length];
-        boolean[] checked = new boolean[KEYS.length];
-        for (int i = 0; i < KEYS.length; i++) {
-            labels[i] = context.getString(LABELS[i]);
-            checked[i] = isEnabled(context, KEYS[i]);
-        }
+        TabBarPopup panel = new TabBarPopup(context, context.getString(R.string.title_tabbar_features));
 
-        new AlertDialog.Builder(context)
-            .setTitle(R.string.title_tabbar_features)
-            .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> {
-                prefs(context).edit().putBoolean(KEYS[which], isChecked).apply();
-                if (onChanged != null) onChanged.run();
-            })
-            .setPositiveButton(android.R.string.ok, null)
-            .show();
+        panel.addHeader(context.getString(R.string.feature_group_keys));
+        add(context, panel, CLAUDE_USAGE, R.string.feature_claude_usage, R.string.feature_claude_usage_desc, onChanged, null);
+        add(context, panel, VPN, R.string.feature_vpn, R.string.feature_vpn_desc, onChanged, null);
+        add(context, panel, FORWARDS, R.string.feature_forwards, R.string.feature_forwards_desc, onChanged, null);
+        add(context, panel, SNIPPETS, R.string.feature_snippets, R.string.feature_snippets_desc, onChanged, null);
+        TabBarPopup.Row[] sshOptions = new TabBarPopup.Row[2];
+        add(context, panel, SSH, R.string.feature_ssh, R.string.feature_ssh_desc, onChanged, checked -> {
+            for (TabBarPopup.Row row : sshOptions) row.setEnabled(checked);
+        });
+
+        panel.addHeader(context.getString(R.string.feature_group_ssh));
+        sshOptions[0] = add(context, panel, SSH_REACHABILITY, R.string.feature_ssh_reachability, R.string.feature_ssh_reachability_desc, onChanged, null);
+        sshOptions[1] = add(context, panel, HOST_COLORS, R.string.feature_host_colors, R.string.feature_host_colors_desc, onChanged, null);
+        for (TabBarPopup.Row row : sshOptions) row.setEnabled(isEnabled(context, SSH));
+
+        panel.addHeader(context.getString(R.string.feature_group_sessions));
+        add(context, panel, SESSION_RESTORE, R.string.feature_session_restore, R.string.feature_session_restore_desc, onChanged, null);
+
+        panel.addButtons(new TabBarPopup.Button(context.getString(R.string.action_done), TabBarPopup.Button.PRIMARY, panel::dismiss));
+        panel.showCentered(true, null);
+    }
+
+    private static TabBarPopup.Row add(Context context, TabBarPopup panel, String key, int label, int description,
+                                       Runnable onChanged, TabBarPopup.OnToggle also) {
+        return panel.addSwitchRow(context.getString(label), context.getString(description), false, isEnabled(context, key), checked -> {
+            prefs(context).edit().putBoolean(key, checked).apply();
+            if (also != null) also.onToggle(checked);
+            if (onChanged != null) onChanged.run();
+        });
     }
 
 }

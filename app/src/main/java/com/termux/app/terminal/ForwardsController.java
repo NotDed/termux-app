@@ -85,6 +85,8 @@ public class ForwardsController {
 
     private TabBarPopup mPopup;
     private final Map<String, TabBarPopup.Row> mRows = new HashMap<>();
+    /** Forwards whose last start failed, so the next refresh keeps showing the error. */
+    private final java.util.Set<String> mFailed = new java.util.HashSet<>();
 
     public ForwardsController(TermuxActivity activity, TextView button, Runnable openEditor) {
         mActivity = activity;
@@ -146,7 +148,7 @@ public class ForwardsController {
                 for (Forward f : forwards) {
                     if (f.state != State.OFF) active++;
                     TabBarPopup.Row row = mRows.get(f.name);
-                    if (row != null) row.setDotColor(dotColor(f.state));
+                    if (row != null && !mFailed.contains(f.name)) applyRow(row, f);
                 }
                 applyCount(active);
             });
@@ -165,6 +167,12 @@ public class ForwardsController {
         }
     }
 
+    private void applyRow(TabBarPopup.Row row, Forward forward) {
+        row.setChecked(forward.state != State.OFF);
+        row.setDotColor(dotColor(forward.state));
+        row.setSubtitle(describe(forward) + (forward.state == State.STARTING ? " · starting…" : ""));
+    }
+
     private static int dotColor(State state) {
         switch (state) {
             case ON: return TabBarPopup.DOT_GREEN;
@@ -173,31 +181,35 @@ public class ForwardsController {
         }
     }
 
+    private static String describe(Forward f) {
+        Matcher spec = SPEC.matcher(f.spec);
+        return f.host + " · :" + f.localPort + (spec.matches() ? " → " + spec.group(2) + ":" + spec.group(3) : "");
+    }
+
     private void showPopup() {
         List<Forward> forwards = read();
         mRows.clear();
+        mFailed.clear();
         mPopup = new TabBarPopup(mActivity, mActivity.getString(R.string.title_forwards));
+        TabBarPopup popup = mPopup;
+        Runnable edit = () -> {
+            popup.dismiss();
+            createExample();
+            mOpenEditor.run();
+        };
+        mPopup.addHeaderAction("✎", edit);
+        mPopup.setOnDismiss(() -> { if (mPopup == popup) mPopup = null; });
 
         if (forwards.isEmpty()) {
             boolean exists = new File(PATH).isFile();
-            mPopup.addRow(mActivity.getString(exists ? R.string.action_edit_file : R.string.action_create_file, DISPLAY_PATH),
-                mActivity.getString(R.string.msg_forwards_empty), false, null, () -> {
-                    mPopup.dismiss();
-                    createExample();
-                    mOpenEditor.run();
-                }, null, null);
+            mPopup.addMessage(TabBarPopup.Kind.INFO, mActivity.getString(R.string.msg_forwards_empty),
+                mActivity.getString(exists ? R.string.action_edit_file : R.string.action_create_file, DISPLAY_PATH), edit);
         } else {
             for (Forward f : forwards) {
-                Matcher spec = SPEC.matcher(f.spec);
-                String subtitle = f.host + " · localhost:" + f.localPort +
-                    (spec.matches() ? " → " + spec.group(2) + ":" + spec.group(3) : "");
-                TabBarPopup.Row row = mPopup.addRow(f.name, subtitle, true, null, () -> toggle(f), null, null);
+                TabBarPopup.Row row = mPopup.addSwitchRow(f.name, describe(f), true, false, checked -> toggle(f));
                 mRows.put(f.name, row);
             }
-            mPopup.addRow(mActivity.getString(R.string.action_edit_file, DISPLAY_PATH), null, false, null, () -> {
-                mPopup.dismiss();
-                mOpenEditor.run();
-            }, null, null);
+            mPopup.addFooter(mActivity.getString(R.string.msg_forwards_hint));
         }
 
         mPopup.show(mButton);
@@ -213,10 +225,27 @@ public class ForwardsController {
                 return;
             }
 
-            mHandler.post(() -> { if (row != null) row.setDotColor(TabBarPopup.DOT_AMBER); });
+            mHandler.post(() -> {
+                mFailed.remove(forward.name);
+                if (row != null) {
+                    row.setDotColor(TabBarPopup.DOT_AMBER);
+                    row.setSubtitle(describe(forward) + " · starting…");
+                }
+            });
             String error = start(forward);
             if (error != null) {
-                mHandler.post(() -> mActivity.showToast(mActivity.getString(R.string.msg_forward_failed, forward.name) + "\n" + error, true));
+                mHandler.post(() -> {
+                    String message = mActivity.getString(R.string.msg_forward_failed, forward.name) + ": " + error;
+                    if (mPopup != null && mPopup.isShowing() && row != null) {
+                        mFailed.add(forward.name);
+                        row.setChecked(false);
+                        row.setDotColor(TabBarPopup.DOT_RED);
+                        row.setSubtitle(message, TabBarPopup.DOT_RED);
+                        mPopup.relayout();
+                    } else {
+                        mActivity.showToast(message, true);
+                    }
+                });
             }
             mHandler.post(this::refresh);
         });

@@ -1,12 +1,8 @@
 package com.termux.app.terminal;
 
-import android.app.AlertDialog;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.InputType;
-import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
-import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import com.termux.R;
@@ -101,11 +97,15 @@ public class VpnToggleController {
         if (mState == State.OFF) {
             askPasswordAndConnect();
         } else {
-            new AlertDialog.Builder(mActivity)
-                .setMessage(R.string.msg_vpn_off_confirm)
-                .setPositiveButton(R.string.action_vpn_disconnect, (d, w) -> runScript("off", null))
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
+            TabBarPopup popup = new TabBarPopup(mActivity, mActivity.getString(R.string.msg_vpn_off_confirm));
+            popup.addMessage(TabBarPopup.Kind.INFO, getStatusText(), null, null);
+            popup.addButtons(
+                new TabBarPopup.Button(mActivity.getString(R.string.action_cancel), TabBarPopup.Button.TEXT, popup::dismiss),
+                new TabBarPopup.Button(mActivity.getString(R.string.action_vpn_disconnect), TabBarPopup.Button.DANGER, () -> {
+                    popup.dismiss();
+                    runScript("off", null);
+                }));
+            popup.show(mButton);
         }
     }
 
@@ -136,43 +136,37 @@ public class VpnToggleController {
     }
 
     private void askPasswordAndConnect() {
-        EditText input = new EditText(mActivity);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        input.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        input.setSingleLine(true);
-
-        FrameLayout container = new FrameLayout(mActivity);
-        int padding = Math.round(ExtraKeysStyle.dp(mActivity, 20));
-        container.setPadding(padding, padding / 2, padding, 0);
-        container.addView(input);
-
-        AlertDialog dialog = new AlertDialog.Builder(mActivity)
-            .setTitle(R.string.title_vpn_password)
-            .setView(container)
-            .setPositiveButton(R.string.action_vpn_connect, (d, w) -> {
-                String password = input.getText().toString();
-                input.setText("");
-                if (password.isEmpty()) return;
-                runScript("on", password);
-            })
-            .setNegativeButton(android.R.string.cancel, (d, w) -> {
-                input.setText("");
-                mOnConnected = null;
-            })
-            .create();
-
-        input.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == EditorInfo.IME_ACTION_DONE) {
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
-                return true;
-            }
-            return false;
+        TabBarPopup panel = new TabBarPopup(mActivity, mActivity.getString(R.string.title_vpn_password));
+        boolean[] connecting = {false};
+        EditText[] holder = new EditText[1];
+        Runnable connect = () -> {
+            String password = holder[0].getText().toString();
+            if (password.isEmpty()) return;
+            holder[0].setText("");
+            connecting[0] = true;
+            panel.dismiss();
+            runScript("on", password);
+        };
+        panel.addFooter(mActivity.getString(R.string.msg_vpn_password_desc));
+        holder[0] = panel.addInput(mActivity.getString(R.string.msg_vpn_password_hint), null, true, connect);
+        panel.addButtons(
+            new TabBarPopup.Button(mActivity.getString(R.string.action_cancel), TabBarPopup.Button.TEXT, panel::dismiss),
+            new TabBarPopup.Button(mActivity.getString(R.string.action_vpn_connect), TabBarPopup.Button.PRIMARY, connect));
+        panel.setOnDismiss(() -> {
+            holder[0].setText("");
+            if (!connecting[0]) mOnConnected = null;
         });
+        panel.showCentered(true, holder[0]);
+    }
 
-        dialog.show();
-        input.requestFocus();
-        if (dialog.getWindow() != null)
-            dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+    /** Show why the VPN command failed, with the last lines of its output. */
+    private void showFailure(String output) {
+        TabBarPopup panel = new TabBarPopup(mActivity, mActivity.getString(R.string.msg_vpn_failed));
+        panel.addMessage(TabBarPopup.Kind.ERROR, output.isEmpty() ? mActivity.getString(R.string.msg_vpn_failed)
+            : lastLine(output), null, null);
+        if (output.contains("\n")) panel.addOutput(output);
+        panel.addButtons(new TabBarPopup.Button(mActivity.getString(R.string.action_ok), TabBarPopup.Button.PRIMARY, panel::dismiss));
+        panel.showCentered(true, null);
     }
 
     /** Run the VPN script in the background. The password, if any, is only written to stdin. */
@@ -229,8 +223,7 @@ public class VpnToggleController {
                 if (code == 0) {
                     mActivity.showToast(output.isEmpty() ? getStatusText() : lastLine(output), false);
                 } else {
-                    mActivity.showToast(mActivity.getString(R.string.msg_vpn_failed) +
-                        (output.isEmpty() ? "" : "\n" + output), true);
+                    showFailure(output);
                 }
                 refreshState();
             });

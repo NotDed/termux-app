@@ -1,6 +1,5 @@
 package com.termux.app.terminal;
 
-import android.app.AlertDialog;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Typeface;
@@ -14,14 +13,15 @@ import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.PopupMenu;
 import android.widget.TextView;
 
 import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.shared.shell.TermuxSession;
 import com.termux.shared.terminal.io.extrakeys.ExtraKeysStyle;
+import com.termux.shared.termux.TermuxConstants;
 import com.termux.terminal.TerminalSession;
 
 import java.util.List;
@@ -254,10 +254,14 @@ public class TermuxSessionsTabBarController {
     /** Show the hosts from ~/.ssh/config with reachability dots and a tmux shortcut. */
     private void showSshHostsPopup(View anchor) {
         List<SshConfigHosts.HostEntry> hosts = SshConfigHosts.read();
-        TabBarPopup popup = new TabBarPopup(mActivity, "ssh");
+        TabBarPopup popup = new TabBarPopup(mActivity, mActivity.getString(R.string.title_ssh_hosts));
+        popup.addHeaderAction("✎", () -> {
+            popup.dismiss();
+            openEditor("ssh config", TermuxConstants.TERMUX_HOME_DIR_PATH + "/.ssh/config");
+        });
 
         if (hosts.isEmpty()) {
-            popup.addRow(mActivity.getString(R.string.msg_no_ssh_hosts), null, false, null, null, null, null);
+            popup.addMessage(TabBarPopup.Kind.INFO, mActivity.getString(R.string.msg_no_ssh_hosts), null, null);
             popup.show(anchor);
             return;
         }
@@ -265,19 +269,20 @@ public class TermuxSessionsTabBarController {
         boolean probe = TabBarFeatures.isEnabled(mActivity, TabBarFeatures.SSH_REACHABILITY);
         for (SshConfigHosts.HostEntry host : hosts) {
             TabBarPopup.Row row = popup.addRow(host.alias, host.describe(), probe, "tmux",
-                () -> { popup.dismiss(); openSsh(host, false); }, null,
-                () -> { popup.dismiss(); openSsh(host, true); });
+                () -> openSsh(popup, host, false), null,
+                () -> openSsh(popup, host, true));
             if (probe) {
                 mProbeExecutor.execute(() -> {
                     SshConfigHosts.Reachability reachability = SshConfigHosts.probe(host);
                     mHandler.post(() -> {
                         row.setDotColor(getReachabilityColor(reachability));
                         if (reachability == SshConfigHosts.Reachability.NEEDS_VPN)
-                            row.setSubtitle(mActivity.getString(R.string.msg_ssh_needs_vpn_short));
+                            row.setSubtitle(host.describe() + " · " + mActivity.getString(R.string.msg_ssh_needs_vpn_short), TabBarPopup.DOT_AMBER);
                     });
                 });
             }
         }
+        popup.addFooter(mActivity.getString(R.string.msg_ssh_hint));
         popup.show(anchor);
     }
 
@@ -290,48 +295,57 @@ public class TermuxSessionsTabBarController {
         }
     }
 
-    /** Open an SSH host, offering to connect the VPN first if the host goes through it and it is off. */
-    private void openSsh(SshConfigHosts.HostEntry host, boolean tmux) {
+    /**
+     * Open an SSH host. If it goes through the VPN and that is off, the popup asks first whether
+     * to connect it.
+     */
+    private void openSsh(TabBarPopup popup, SshConfigHosts.HostEntry host, boolean tmux) {
         TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
         if (client == null) return;
 
         Runnable open = () -> client.addNewSshSession(host.alias, tmux);
         if (host.getLocalSocksPort() <= 0 || mVpnToggleController.isOn()) {
+            popup.dismiss();
             open.run();
             return;
         }
 
-        new AlertDialog.Builder(mActivity)
-            .setMessage(mActivity.getString(R.string.msg_ssh_needs_vpn, host.alias))
-            .setPositiveButton(R.string.action_connect_vpn, (d, w) -> mVpnToggleController.connectThen(open))
-            .setNeutralButton(R.string.action_open_anyway, (d, w) -> open.run())
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
+        popup.clearRows();
+        popup.addMessage(TabBarPopup.Kind.WARN, mActivity.getString(R.string.msg_ssh_needs_vpn, host.alias), null, null);
+        popup.addButtons(
+            new TabBarPopup.Button(mActivity.getString(R.string.action_open_anyway), TabBarPopup.Button.TEXT, () -> {
+                popup.dismiss();
+                open.run();
+            }),
+            new TabBarPopup.Button(mActivity.getString(R.string.action_connect_vpn), TabBarPopup.Button.PRIMARY, () -> {
+                popup.dismiss();
+                mVpnToggleController.connectThen(open);
+            }));
+        popup.relayout();
     }
 
-    /** Show the saved commands from ~/.termux/snippets. */
+    /** Show the saved commands from ~/.termux/snippets. Tapping types a command, ▶ runs it. */
     private void showSnippetsPopup(View anchor) {
         List<Snippets.Snippet> snippets = Snippets.read();
         TabBarPopup popup = new TabBarPopup(mActivity, mActivity.getString(R.string.title_snippets));
+        Runnable edit = () -> {
+            popup.dismiss();
+            Snippets.createExample();
+            openEditor("snippets", Snippets.PATH);
+        };
+        popup.addHeaderAction("✎", edit);
 
         if (snippets.isEmpty()) {
-            boolean exists = Snippets.exists();
-            popup.addRow(mActivity.getString(exists ? R.string.action_edit_file : R.string.action_create_file, Snippets.DISPLAY_PATH),
-                mActivity.getString(R.string.msg_snippets_empty), false, null, () -> {
-                    popup.dismiss();
-                    Snippets.createExample();
-                    openEditor("snippets", Snippets.PATH);
-                }, null, null);
+            popup.addMessage(TabBarPopup.Kind.INFO, mActivity.getString(R.string.msg_snippets_empty),
+                mActivity.getString(Snippets.exists() ? R.string.action_edit_file : R.string.action_create_file, Snippets.DISPLAY_PATH), edit);
         } else {
             for (Snippets.Snippet snippet : snippets) {
-                popup.addRow(snippet.label, snippet.label.equals(snippet.command) ? null : snippet.command, false, null,
-                    () -> { popup.dismiss(); typeIntoCurrentSession(snippet.command, true); },
-                    () -> { popup.dismiss(); typeIntoCurrentSession(snippet.command, false); }, null);
+                popup.addRow(snippet.label, snippet.label.equals(snippet.command) ? null : snippet.command, false,
+                    mActivity.getString(R.string.action_run),
+                    () -> { popup.dismiss(); typeIntoCurrentSession(snippet.command, false); }, null,
+                    () -> { popup.dismiss(); typeIntoCurrentSession(snippet.command, true); });
             }
-            popup.addRow(mActivity.getString(R.string.action_edit_file, Snippets.DISPLAY_PATH), null, false, null, () -> {
-                popup.dismiss();
-                openEditor("snippets", Snippets.PATH);
-            }, null, null);
+            popup.addFooter(mActivity.getString(R.string.msg_snippets_hint));
         }
         popup.show(anchor);
     }
@@ -342,33 +356,65 @@ public class TermuxSessionsTabBarController {
         session.write(run ? command + "\r" : command);
     }
 
+    /** The long-press menu of a tab: rename, reconnect (SSH tabs) and close. */
     private void showTabMenu(View anchor, TerminalSession session) {
-        PopupMenu popup = new PopupMenu(mActivity, anchor);
-        popup.getMenu().add(0, 1, 0, R.string.action_rename_session);
-        popup.getMenu().add(0, 2, 1, R.string.action_close_session);
-        popup.setOnMenuItemClickListener(item -> {
-            TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
-            if (client == null) return true;
-            if (item.getItemId() == 1) {
-                client.renameSession(session);
-            } else if (item.getItemId() == 2) {
-                confirmCloseSession(session);
-            }
-            return true;
+        int index = indexOf(session);
+        TabBarPopup popup = new TabBarPopup(mActivity, getTabTitle(index, session));
+        popup.addLinkRow(mActivity.getString(R.string.action_rename_session), null, () -> {
+            popup.dismiss();
+            showRename(session);
         });
-        popup.show();
+        SessionMeta meta = SessionMeta.get(session);
+        if (meta != null) {
+            popup.addLinkRow(mActivity.getString(R.string.action_reconnect), mActivity.getString(R.string.msg_reconnect_desc), () -> {
+                popup.dismiss();
+                TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
+                if (client == null) return;
+                client.addNewSshSession(meta.host, meta.tmux);
+                closeSession(session);
+            });
+        }
+        popup.addLinkRow(mActivity.getString(R.string.action_close_session), null, () -> {
+            if (!session.isRunning()) {
+                popup.dismiss();
+                closeSession(session);
+                return;
+            }
+            popup.clearRows();
+            popup.addMessage(TabBarPopup.Kind.WARN, mActivity.getString(R.string.msg_close_session_confirm), null, null);
+            popup.addButtons(
+                new TabBarPopup.Button(mActivity.getString(R.string.action_cancel), TabBarPopup.Button.TEXT, popup::dismiss),
+                new TabBarPopup.Button(mActivity.getString(R.string.action_close_session), TabBarPopup.Button.DANGER, () -> {
+                    popup.dismiss();
+                    closeSession(session);
+                }));
+            popup.relayout();
+        });
+        popup.show(anchor);
     }
 
-    private void confirmCloseSession(TerminalSession session) {
-        if (!session.isRunning()) {
-            closeSession(session);
-            return;
+    private int indexOf(TerminalSession session) {
+        for (int i = 0; i < mSessions.size(); i++) {
+            TermuxSession termuxSession = mSessions.get(i);
+            if (termuxSession != null && termuxSession.getTerminalSession() == session) return i;
         }
-        new AlertDialog.Builder(mActivity)
-            .setMessage(R.string.msg_close_session_confirm)
-            .setPositiveButton(R.string.action_close_session, (dialog, which) -> closeSession(session))
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
+        return 0;
+    }
+
+    private void showRename(TerminalSession session) {
+        TabBarPopup panel = new TabBarPopup(mActivity, mActivity.getString(R.string.title_rename_session));
+        EditText[] holder = new EditText[1];
+        Runnable apply = () -> {
+            session.mSessionName = holder[0].getText().toString().trim();
+            panel.dismiss();
+            TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
+            if (client != null) client.termuxSessionListNotifyUpdated();
+        };
+        holder[0] = panel.addInput(mActivity.getString(R.string.msg_rename_session_hint), session.mSessionName, false, apply);
+        panel.addButtons(
+            new TabBarPopup.Button(mActivity.getString(R.string.action_cancel), TabBarPopup.Button.TEXT, panel::dismiss),
+            new TabBarPopup.Button(mActivity.getString(R.string.action_rename_session_confirm), TabBarPopup.Button.PRIMARY, apply));
+        panel.showCentered(true, holder[0]);
     }
 
     private void closeSession(TerminalSession session) {

@@ -1,6 +1,5 @@
 package com.termux.app.terminal;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.text.TextUtils;
@@ -106,28 +105,38 @@ public final class SessionRestore {
             return;
         }
 
-        StringBuilder names = new StringBuilder();
+        TabBarPopup panel = new TabBarPopup(activity, activity.getString(R.string.title_restore_tabs, entries.size()));
+        panel.addFooter(activity.getString(R.string.msg_restore_tabs_desc));
+        boolean[] selected = new boolean[entries.size()];
+        java.util.Arrays.fill(selected, true);
         for (int i = 0; i < entries.size(); i++) {
             Entry e = entries.get(i);
-            String label = e.host != null ? "ssh " + e.host + (e.tmux ? " (tmux)" : "")
-                : (!TextUtils.isEmpty(e.name) ? e.name : "shell") + (e.cwd != null ? "  " + shortPath(e.cwd) : "");
-            names.append(i + 1).append(". ").append(label).append('\n');
+            String label = e.host != null ? "ssh " + e.host + (e.tmux ? " · tmux" : "")
+                : (!TextUtils.isEmpty(e.name) ? e.name : "shell");
+            String subtitle = e.host != null ? null : (e.cwd != null ? shortPath(e.cwd) : null);
+            final int index = i;
+            panel.addCheckRow((i + 1) + "  " + label, subtitle, true, checked -> selected[index] = checked);
         }
-
-        new AlertDialog.Builder(activity)
-            .setTitle(activity.getString(R.string.title_restore_tabs, entries.size()))
-            .setMessage(names.toString().trim())
-            .setCancelable(false)
-            .setPositiveButton(R.string.action_restore, (d, w) -> {
-                restore(client, entries);
-                markReady();
-                save(activity, activity.getTermuxService() == null ? null : activity.getTermuxService().getTermuxSessions());
-            })
-            .setNegativeButton(R.string.action_start_fresh, (d, w) -> {
+        panel.addButtons(
+            new TabBarPopup.Button(activity.getString(R.string.action_start_fresh), TabBarPopup.Button.TEXT, () -> {
+                panel.dismiss();
                 startFresh.run();
                 markReady();
-            })
-            .show();
+            }),
+            new TabBarPopup.Button(activity.getString(R.string.action_restore), TabBarPopup.Button.PRIMARY, () -> {
+                List<Entry> chosen = new ArrayList<>();
+                for (int i = 0; i < entries.size(); i++) if (selected[i]) chosen.add(entries.get(i));
+                panel.dismiss();
+                if (chosen.isEmpty()) {
+                    startFresh.run();
+                    markReady();
+                    return;
+                }
+                restore(client, chosen);
+                markReady();
+                save(activity, activity.getTermuxService() == null ? null : activity.getTermuxService().getTermuxSessions());
+            }));
+        panel.showCentered(false, null);
     }
 
     private static void restore(TermuxTerminalSessionClient client, List<Entry> entries) {

@@ -14,6 +14,7 @@ import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.shared.terminal.io.extrakeys.ExtraKeysStyle;
 import com.termux.shared.termux.TermuxConstants;
+import com.termux.terminal.TerminalSession;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -67,6 +68,7 @@ public class ClaudeUsageController {
     private boolean mFetching;
     private long mLastAttemptAt;
     private TabBarPopup mPopup;
+    private TextView mRefreshAction;
 
     public ClaudeUsageController(TermuxActivity activity, TextView button) {
         mActivity = activity;
@@ -166,6 +168,8 @@ public class ClaudeUsageController {
 
     private void showPopup() {
         mPopup = new TabBarPopup(mActivity, mActivity.getString(R.string.title_claude_usage));
+        mRefreshAction = mPopup.addHeaderAction("↻", this::fetch);
+        mPopup.setOnDismiss(() -> { mPopup = null; mRefreshAction = null; });
         renderPopup();
         mPopup.show(mButton);
         fetch();
@@ -175,9 +179,11 @@ public class ClaudeUsageController {
     private void renderPopup() {
         if (mPopup == null) return;
         mPopup.clearRows();
+        if (mRefreshAction != null) mRefreshAction.setAlpha(mFetching ? 0.35f : 1f);
 
         if (mAccounts.isEmpty()) {
-            mPopup.addRow(mActivity.getString(R.string.msg_claude_usage_not_logged_in, "claude"), null, false, null, null, null, null);
+            mPopup.addMessage(TabBarPopup.Kind.INFO,
+                mActivity.getString(R.string.msg_claude_usage_not_logged_in, "claude"), null, null);
         }
 
         long oldestFetch = Long.MAX_VALUE;
@@ -186,8 +192,7 @@ public class ClaudeUsageController {
                 ? " · " + state.lastGood.plan : "";
             mPopup.addHeader(state.account.label() + plan);
 
-            if (state.lastFailure != null)
-                mPopup.addRow(getFailureMessage(state.account, state.lastFailure), null, false, null, null, null, null);
+            if (state.lastFailure != null) addFailure(state.account, state.lastFailure);
 
             if (state.lastGood != null) {
                 oldestFetch = Math.min(oldestFetch, state.lastGood.fetchedAt);
@@ -196,23 +201,45 @@ public class ClaudeUsageController {
                         limit.color(GREEN, AMBER, RED));
                 }
             } else if (state.lastFailure == null && mFetching) {
-                mPopup.addRow(mActivity.getString(R.string.msg_claude_usage_loading), null, false, null, null, null, null);
+                mPopup.addFooter(mActivity.getString(R.string.msg_claude_usage_loading));
             }
         }
 
         String footer = mFetching ? mActivity.getString(R.string.msg_claude_usage_refreshing)
             : oldestFetch == Long.MAX_VALUE ? mActivity.getString(R.string.action_claude_usage_retry)
             : mActivity.getString(R.string.msg_claude_usage_updated, formatAge(oldestFetch));
-        mPopup.addRow(footer, null, false, null, this::fetch, null, null);
+        mPopup.addFooter(footer);
+        mPopup.relayout();
     }
 
-    private String getFailureMessage(ClaudeUsage.Account account, ClaudeUsage.Result result) {
+    private void addFailure(ClaudeUsage.Account account, ClaudeUsage.Result result) {
         switch (result.status) {
-            case NOT_LOGGED_IN: return mActivity.getString(R.string.msg_claude_usage_not_logged_in, account.command());
-            case TOKEN_EXPIRED: return mActivity.getString(R.string.msg_claude_usage_token_expired, account.command());
-            default: return mActivity.getString(R.string.msg_claude_usage_error,
-                result.error == null ? "?" : result.error);
+            case NOT_LOGGED_IN:
+                mPopup.addMessage(TabBarPopup.Kind.WARN,
+                    mActivity.getString(R.string.msg_claude_usage_not_logged_in, account.command()),
+                    mActivity.getString(R.string.msg_claude_usage_logged_out_action, account.command()),
+                    () -> openAccount(account));
+                break;
+            case TOKEN_EXPIRED:
+                mPopup.addMessage(TabBarPopup.Kind.WARN,
+                    mActivity.getString(R.string.msg_claude_usage_token_expired, account.command()),
+                    mActivity.getString(R.string.msg_claude_usage_logged_out_action, account.command()),
+                    () -> openAccount(account));
+                break;
+            default:
+                mPopup.addMessage(TabBarPopup.Kind.ERROR, mActivity.getString(R.string.msg_claude_usage_error,
+                    result.error == null ? "?" : result.error), null, null);
+                break;
         }
+    }
+
+    /** Open a new tab running the account's command, so the user can log in. */
+    private void openAccount(ClaudeUsage.Account account) {
+        if (mPopup != null) mPopup.dismiss();
+        TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
+        if (client == null) return;
+        TerminalSession session = client.addNewSession(false, account.command(), null, null, TermuxConstants.TERMUX_HOME_DIR_PATH);
+        if (session != null) session.write(account.command() + "\r");
     }
 
     private static String formatReset(long resetsAt) {
