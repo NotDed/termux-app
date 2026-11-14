@@ -65,16 +65,45 @@ final class ClaudeUsage {
     static final class Account {
         final String name;
         final File configDir;
+        /** The shell alias that runs Claude Code with this folder, from {@code ~/.bashrc}, or null. */
+        final String alias;
 
-        Account(String name, File configDir) {
+        Account(String name, File configDir, String alias) {
             this.name = name;
             this.configDir = configDir;
+            this.alias = alias;
         }
 
         /** The command that runs Claude Code with this account, matching the user's aliases. */
         String command() {
+            if (alias != null) return alias;
             return "personal".equals(name) ? "claude" : "claude-" + name;
         }
+
+        /** The name shown for this account: its alias (han1), or the folder name. */
+        String label() {
+            return alias != null && !"personal".equals(name) ? alias : name;
+        }
+    }
+
+    /** {@code alias han1='CLAUDE_CONFIG_DIR=~/.claude-han claude'} gives folder ".claude-han" and alias "han1". */
+    private static final java.util.regex.Pattern ALIAS_LINE = java.util.regex.Pattern.compile(
+        "^\\s*alias\\s+([A-Za-z0-9._-]+)=['\"]?CLAUDE_CONFIG_DIR=(?:~|\\$HOME|\\$\\{HOME\\})/(\\.claude(?:-[A-Za-z0-9._-]+)?)/?\\s+claude\\b");
+
+    /** Config folder name to alias, read from the aliases in {@code ~/.bashrc}. The first alias wins. */
+    private static java.util.Map<String, String> readAliases(File home) {
+        java.util.Map<String, String> aliases = new java.util.HashMap<>();
+        File bashrc = new File(home, ".bashrc");
+        if (!bashrc.isFile()) return aliases;
+        try (BufferedReader reader = new BufferedReader(new FileReader(bashrc))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                java.util.regex.Matcher m = ALIAS_LINE.matcher(line);
+                if (m.find() && !aliases.containsKey(m.group(2))) aliases.put(m.group(2), m.group(1));
+            }
+        } catch (Exception ignored) {
+        }
+        return aliases;
     }
 
     private static final java.util.regex.Pattern ACCOUNT_NAME = java.util.regex.Pattern.compile("^[A-Za-z0-9._-]+$");
@@ -85,8 +114,9 @@ final class ClaudeUsage {
     static List<Account> discoverAccounts(String homeDir) {
         List<Account> accounts = new ArrayList<>();
         File home = new File(homeDir);
+        java.util.Map<String, String> aliases = readAliases(home);
         File personal = new File(home, ".claude");
-        if (personal.isDirectory()) accounts.add(new Account("personal", personal));
+        if (personal.isDirectory()) accounts.add(new Account("personal", personal, aliases.get(".claude")));
 
         File[] files = home.listFiles();
         List<Account> others = new ArrayList<>();
@@ -95,7 +125,7 @@ final class ClaudeUsage {
                 String fileName = file.getName();
                 if (!file.isDirectory() || !fileName.startsWith(".claude-")) continue;
                 String name = fileName.substring(".claude-".length());
-                if (ACCOUNT_NAME.matcher(name).matches()) others.add(new Account(name, file));
+                if (ACCOUNT_NAME.matcher(name).matches()) others.add(new Account(name, file, aliases.get(fileName)));
             }
         }
         others.sort((a, b) -> a.name.compareTo(b.name));

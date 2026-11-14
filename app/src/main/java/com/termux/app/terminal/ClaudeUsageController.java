@@ -184,7 +184,7 @@ public class ClaudeUsageController {
         for (AccountState state : mAccounts.values()) {
             String plan = state.lastGood != null && state.lastGood.plan != null && !state.lastGood.plan.isEmpty()
                 ? " · " + state.lastGood.plan : "";
-            mPopup.addHeader(state.account.name + plan);
+            mPopup.addHeader(state.account.label() + plan);
 
             if (state.lastFailure != null)
                 mPopup.addRow(getFailureMessage(state.account, state.lastFailure), null, false, null, null, null, null);
