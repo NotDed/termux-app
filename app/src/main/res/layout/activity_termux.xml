@@ -120,7 +120,8 @@
                 android:text="✳"
                 android:textColor="#FFECECEC"
                 android:textSize="12sp"
-                android:maxLines="1"
+                android:lineSpacingMultiplier="0.9"
+                android:includeFontPadding="false"
                 android:contentDescription="@string/action_claude_usage"
                 tools:ignore="HardcodedText" />
 

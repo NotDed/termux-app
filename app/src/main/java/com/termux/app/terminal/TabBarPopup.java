@@ -172,6 +172,18 @@ final class TabBarPopup {
         mRowCount = 0;
     }
 
+    /** Add a small section header, like an account name. */
+    void addHeader(String text) {
+        TextView header = new TextView(mContext);
+        header.setText(text);
+        header.setTextColor(ExtraKeysStyle.KEY_HINT_TEXT_COLOR);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        header.setTypeface(null, android.graphics.Typeface.BOLD);
+        header.setPadding(dp(10), dp(10), dp(10), dp(4));
+        mList.addView(header);
+        mRowCount++;
+    }
+
     /** Add a row with a label, a percent and a bar showing that percent. */
     void addMeterRow(String label, int percent, @Nullable String subtitle, int color) {
         int clamped = Math.max(0, Math.min(100, percent));

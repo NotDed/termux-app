@@ -61,14 +61,59 @@ final class ClaudeUsage {
         }
     }
 
+    /** A Claude Code config folder, like {@code ~/.claude} or {@code ~/.claude-han} (CLAUDE_CONFIG_DIR). */
+    static final class Account {
+        final String name;
+        final File configDir;
+
+        Account(String name, File configDir) {
+            this.name = name;
+            this.configDir = configDir;
+        }
+
+        /** The command that runs Claude Code with this account, matching the user's aliases. */
+        String command() {
+            return "personal".equals(name) ? "claude" : "claude-" + name;
+        }
+    }
+
+    private static final java.util.regex.Pattern ACCOUNT_NAME = java.util.regex.Pattern.compile("^[A-Za-z0-9._-]+$");
+
     private ClaudeUsage() {}
 
-    /** Fetch the usage. Blocks on the network, so call it off the main thread. Never throws. */
-    static Result fetch(String homeDir) {
+    /** {@code ~/.claude} as "personal", then every {@code ~/.claude-<name>} folder by name. */
+    static List<Account> discoverAccounts(String homeDir) {
+        List<Account> accounts = new ArrayList<>();
+        File home = new File(homeDir);
+        File personal = new File(home, ".claude");
+        if (personal.isDirectory()) accounts.add(new Account("personal", personal));
+
+        File[] files = home.listFiles();
+        List<Account> others = new ArrayList<>();
+        if (files != null) {
+            for (File file : files) {
+                String fileName = file.getName();
+                if (!file.isDirectory() || !fileName.startsWith(".claude-")) continue;
+                String name = fileName.substring(".claude-".length());
+                if (ACCOUNT_NAME.matcher(name).matches()) others.add(new Account(name, file));
+            }
+        }
+        others.sort((a, b) -> a.name.compareTo(b.name));
+        accounts.addAll(others);
+        return accounts;
+    }
+
+    /** Fetch the usage of one account. Blocks on the network, so call it off the main thread. Never throws. */
+    static Result fetch(File configDir) {
         Result result = new Result();
         String token;
         try {
-            JSONObject oauth = new JSONObject(readFile(new File(homeDir, ".claude/.credentials.json")))
+            File credentials = new File(configDir, ".credentials.json");
+            if (!credentials.isFile()) {
+                result.status = Status.NOT_LOGGED_IN;
+                return result;
+            }
+            JSONObject oauth = new JSONObject(readFile(credentials))
                 .optJSONObject("claudeAiOauth");
             if (oauth == null || oauth.optString("accessToken", "").isEmpty()) {
                 result.status = Status.NOT_LOGGED_IN;

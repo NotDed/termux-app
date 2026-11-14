@@ -4,6 +4,10 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.util.TypedValue;
 import android.widget.TextView;
 
 import com.termux.R;
@@ -15,12 +19,20 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Tab bar key showing the Claude plan session usage, with a popup of all limits like {@code /usage}. */
+/**
+ * Tab bar key showing the Claude plan session usage of every account (one line each), with a
+ * popup of all limits per account like {@code /usage}. Accounts are the Claude Code config folders
+ * {@code ~/.claude} ("personal") and {@code ~/.claude-<name>}.
+ */
 public class ClaudeUsageController {
 
     private static final long AUTO_REFRESH_MS = 5 * 60 * 1000;
@@ -29,17 +41,29 @@ public class ClaudeUsageController {
     private static final int GREEN = 0xFF66BB6A;
 
     private static final String PREFS_NAME = "claude_usage";
-    private static final String KEY_CACHE = "cache";
+    private static final String KEY_CACHE_PREFIX = "cache_";
+    /** Cache key used before multiple accounts, migrated to "cache_personal". */
+    private static final String KEY_LEGACY_CACHE = "cache";
+
+    private static final class AccountState {
+        final ClaudeUsage.Account account;
+        /** Last successful result, possibly loaded from the cache. */
+        ClaudeUsage.Result lastGood;
+        /** The last attempt, if it failed. */
+        ClaudeUsage.Result lastFailure;
+
+        AccountState(ClaudeUsage.Account account) {
+            this.account = account;
+        }
+    }
 
     private final TermuxActivity mActivity;
     private final TextView mButton;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
 
-    /** Last successful result, possibly loaded from the cache. */
-    private ClaudeUsage.Result mLastGood;
-    /** Status of the last attempt, if it failed. */
-    private ClaudeUsage.Result mLastFailure;
+    /** Accounts in display order. Main thread only. */
+    private final Map<String, AccountState> mAccounts = new LinkedHashMap<>();
     private boolean mFetching;
     private long mLastAttemptAt;
     private TabBarPopup mPopup;
@@ -47,7 +71,8 @@ public class ClaudeUsageController {
     public ClaudeUsageController(TermuxActivity activity, TextView button) {
         mActivity = activity;
         mButton = button;
-        mLastGood = loadCache(activity);
+        migrateLegacyCache(activity);
+        syncAccounts(ClaudeUsage.discoverAccounts(TermuxConstants.TERMUX_HOME_DIR_PATH));
         mButton.setOnClickListener(v -> showPopup());
         mButton.setOnLongClickListener(v -> {
             fetch();
@@ -61,21 +86,48 @@ public class ClaudeUsageController {
         if (!mFetching && System.currentTimeMillis() - mLastAttemptAt > AUTO_REFRESH_MS) fetch();
     }
 
+    /** Keep state for the current accounts, loading the cache of new ones and dropping removed ones. */
+    private void syncAccounts(List<ClaudeUsage.Account> accounts) {
+        Map<String, AccountState> previous = new LinkedHashMap<>(mAccounts);
+        mAccounts.clear();
+        for (ClaudeUsage.Account account : accounts) {
+            AccountState state = previous.get(account.name);
+            if (state == null || !state.account.configDir.equals(account.configDir)) {
+                state = new AccountState(account);
+                state.lastGood = loadCache(mActivity, account.name);
+            }
+            mAccounts.put(account.name, state);
+        }
+    }
+
     private void fetch() {
         if (mFetching) return;
         mFetching = true;
         mLastAttemptAt = System.currentTimeMillis();
         renderPopup();
         mExecutor.execute(() -> {
-            ClaudeUsage.Result result = ClaudeUsage.fetch(TermuxConstants.TERMUX_HOME_DIR_PATH);
+            List<ClaudeUsage.Account> accounts = ClaudeUsage.discoverAccounts(TermuxConstants.TERMUX_HOME_DIR_PATH);
+            List<ClaudeUsage.Result> results = new ArrayList<>();
+            for (ClaudeUsage.Account account : accounts) results.add(ClaudeUsage.fetch(account.configDir));
             mHandler.post(() -> {
                 mFetching = false;
-                if (result.status == ClaudeUsage.Status.OK) {
-                    mLastGood = result;
-                    mLastFailure = null;
-                    saveCache(mActivity, result);
-                } else {
-                    mLastFailure = result;
+                syncAccounts(accounts);
+                for (int i = 0; i < accounts.size(); i++) {
+                    AccountState state = mAccounts.get(accounts.get(i).name);
+                    ClaudeUsage.Result result = results.get(i);
+                    if (state == null) continue;
+                    if (result.status == ClaudeUsage.Status.OK) {
+                        state.lastGood = result;
+                        state.lastFailure = null;
+                        saveCache(mActivity, state.account.name, result);
+                    } else {
+                        state.lastFailure = result;
+                        // An account that logged out should not keep showing old numbers on the key
+                        if (result.status == ClaudeUsage.Status.NOT_LOGGED_IN) {
+                            state.lastGood = null;
+                            clearCache(mActivity, state.account.name);
+                        }
+                    }
                 }
                 applyButton();
                 renderPopup();
@@ -83,21 +135,37 @@ public class ClaudeUsageController {
         });
     }
 
+    /** One line per account with a session limit, each colored by its level. */
     private void applyButton() {
-        ClaudeUsage.Limit primary = mLastGood == null ? null : mLastGood.primary();
-        if (primary == null) {
-            mButton.setText("✳");
+        SpannableStringBuilder text = new SpannableStringBuilder();
+        int lines = 0;
+        for (AccountState state : mAccounts.values()) {
+            ClaudeUsage.Limit primary = state.lastGood == null ? null : state.lastGood.primary();
+            if (primary == null) continue;
+            if (lines > 0) text.append('\n');
+            int start = text.length();
+            text.append(String.valueOf(primary.percent)).append('%');
+            text.setSpan(new ForegroundColorSpan(primary.color(ExtraKeysStyle.KEY_TEXT_COLOR, AMBER, RED)),
+                start, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            lines++;
+        }
+
+        if (lines == 0) {
+            mButton.setSingleLine(true);
+            mButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
             mButton.setTextColor(ExtraKeysStyle.KEY_TEXT_COLOR);
+            mButton.setText("✳");
         } else {
-            mButton.setText(primary.percent + "%");
-            mButton.setTextColor(primary.color(ExtraKeysStyle.KEY_TEXT_COLOR, AMBER, RED));
+            mButton.setSingleLine(lines == 1);
+            if (lines > 1) mButton.setMaxLines(3);
+            mButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, lines > 1 ? 10 : 12);
+            mButton.setText(text);
         }
         mButton.setBackground(ExtraKeysStyle.keyBackground(mActivity, ExtraKeysStyle.KEY_COLOR, 0));
     }
 
     private void showPopup() {
-        String plan = mLastGood != null && mLastGood.plan != null && !mLastGood.plan.isEmpty() ? " · " + mLastGood.plan : "";
-        mPopup = new TabBarPopup(mActivity, mActivity.getString(R.string.title_claude_usage) + plan);
+        mPopup = new TabBarPopup(mActivity, mActivity.getString(R.string.title_claude_usage));
         renderPopup();
         mPopup.show(mButton);
         fetch();
@@ -108,29 +176,40 @@ public class ClaudeUsageController {
         if (mPopup == null) return;
         mPopup.clearRows();
 
-        if (mLastFailure != null) {
-            mPopup.addRow(getFailureMessage(mLastFailure), null, false, null, null, null, null);
+        if (mAccounts.isEmpty()) {
+            mPopup.addRow(mActivity.getString(R.string.msg_claude_usage_not_logged_in, "claude"), null, false, null, null, null, null);
         }
 
-        if (mLastGood != null) {
-            for (ClaudeUsage.Limit limit : mLastGood.limits) {
-                mPopup.addMeterRow(limit.label, limit.percent, formatReset(limit.resetsAt),
-                    limit.color(GREEN, AMBER, RED));
+        long oldestFetch = Long.MAX_VALUE;
+        for (AccountState state : mAccounts.values()) {
+            String plan = state.lastGood != null && state.lastGood.plan != null && !state.lastGood.plan.isEmpty()
+                ? " · " + state.lastGood.plan : "";
+            mPopup.addHeader(state.account.name + plan);
+
+            if (state.lastFailure != null)
+                mPopup.addRow(getFailureMessage(state.account, state.lastFailure), null, false, null, null, null, null);
+
+            if (state.lastGood != null) {
+                oldestFetch = Math.min(oldestFetch, state.lastGood.fetchedAt);
+                for (ClaudeUsage.Limit limit : state.lastGood.limits) {
+                    mPopup.addMeterRow(limit.label, limit.percent, formatReset(limit.resetsAt),
+                        limit.color(GREEN, AMBER, RED));
+                }
+            } else if (state.lastFailure == null && mFetching) {
+                mPopup.addRow(mActivity.getString(R.string.msg_claude_usage_loading), null, false, null, null, null, null);
             }
-        } else if (mFetching) {
-            mPopup.addRow(mActivity.getString(R.string.msg_claude_usage_loading), null, false, null, null, null, null);
         }
 
         String footer = mFetching ? mActivity.getString(R.string.msg_claude_usage_refreshing)
-            : mLastGood == null ? mActivity.getString(R.string.action_claude_usage_retry)
-            : mActivity.getString(R.string.msg_claude_usage_updated, formatAge(mLastGood.fetchedAt));
+            : oldestFetch == Long.MAX_VALUE ? mActivity.getString(R.string.action_claude_usage_retry)
+            : mActivity.getString(R.string.msg_claude_usage_updated, formatAge(oldestFetch));
         mPopup.addRow(footer, null, false, null, this::fetch, null, null);
     }
 
-    private String getFailureMessage(ClaudeUsage.Result result) {
+    private String getFailureMessage(ClaudeUsage.Account account, ClaudeUsage.Result result) {
         switch (result.status) {
-            case NOT_LOGGED_IN: return mActivity.getString(R.string.msg_claude_usage_not_logged_in);
-            case TOKEN_EXPIRED: return mActivity.getString(R.string.msg_claude_usage_token_expired);
+            case NOT_LOGGED_IN: return mActivity.getString(R.string.msg_claude_usage_not_logged_in, account.command());
+            case TOKEN_EXPIRED: return mActivity.getString(R.string.msg_claude_usage_token_expired, account.command());
             default: return mActivity.getString(R.string.msg_claude_usage_error,
                 result.error == null ? "?" : result.error);
         }
@@ -154,8 +233,17 @@ public class ClaudeUsageController {
         return new SimpleDateFormat("EEE HH:mm", Locale.getDefault()).format(new Date(at));
     }
 
+    private static void migrateLegacyCache(Context context) {
+        SharedPreferences prefs = prefs(context);
+        String legacy = prefs.getString(KEY_LEGACY_CACHE, null);
+        if (legacy == null) return;
+        SharedPreferences.Editor editor = prefs.edit().remove(KEY_LEGACY_CACHE);
+        if (!prefs.contains(KEY_CACHE_PREFIX + "personal")) editor.putString(KEY_CACHE_PREFIX + "personal", legacy);
+        editor.apply();
+    }
+
     /** Only numbers and labels are cached, never the token. */
-    private static void saveCache(Context context, ClaudeUsage.Result result) {
+    private static void saveCache(Context context, String account, ClaudeUsage.Result result) {
         try {
             JSONObject object = new JSONObject();
             object.put("plan", result.plan == null ? "" : result.plan);
@@ -170,13 +258,17 @@ public class ClaudeUsageController {
                 limits.put(row);
             }
             object.put("limits", limits);
-            prefs(context).edit().putString(KEY_CACHE, object.toString()).apply();
+            prefs(context).edit().putString(KEY_CACHE_PREFIX + account, object.toString()).apply();
         } catch (Exception ignored) {}
     }
 
-    private static ClaudeUsage.Result loadCache(Context context) {
+    private static void clearCache(Context context, String account) {
+        prefs(context).edit().remove(KEY_CACHE_PREFIX + account).apply();
+    }
+
+    private static ClaudeUsage.Result loadCache(Context context, String account) {
         try {
-            String json = prefs(context).getString(KEY_CACHE, null);
+            String json = prefs(context).getString(KEY_CACHE_PREFIX + account, null);
             if (json == null) return null;
             JSONObject object = new JSONObject(json);
             ClaudeUsage.Result result = new ClaudeUsage.Result();
