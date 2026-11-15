@@ -119,6 +119,13 @@ final class TabBarPopup {
         }
     }
 
+    /** A tap outside that closes a popup, then reaches its key within this time, must not reopen it. */
+    private static final long RETAP_GUARD_MS = 400;
+    private static View sLastOutsideAnchor;
+    private static long sLastOutsideAt;
+    /** Popups currently showing, so they can all be closed when the activity stops. */
+    private static final java.util.Set<TabBarPopup> sShowing = new java.util.HashSet<>();
+
     private static final int MIN_WIDTH_DP = 220;
     private static final int MAX_WIDTH_DP = 320;
     private static final int DIALOG_WIDTH_DP = 320;
@@ -661,7 +668,21 @@ final class TabBarPopup {
         int margin = dp(6);
         int maxWidth = Math.min(dp(MAX_WIDTH_DP), root.getWidth() - 2 * margin);
         int minWidth = Math.min(dp(MIN_WIDTH_DP), maxWidth);
-        return measure(minWidth, maxWidth, Math.round(root.getHeight() * 0.6f));
+        return measure(minWidth, maxWidth, maxPopupHeight(root));
+    }
+
+    /** At most 55% of the screen, and never higher than the space above the anchor. */
+    private int maxPopupHeight(View root) {
+        int max = Math.round(root.getHeight() * 0.55f);
+        if (mAnchor != null) {
+            int[] location = new int[2];
+            mAnchor.getLocationInWindow(location);
+            android.view.WindowInsets insets = root.getRootWindowInsets();
+            int top = insets == null ? 0 : insets.getSystemWindowInsetTop();
+            int above = location[1] - dp(4) - top - dp(8);
+            if (above > dp(120)) max = Math.min(max, above);
+        }
+        return max;
     }
 
     private int[] popupPosition(View anchor, int width) {
@@ -677,21 +698,38 @@ final class TabBarPopup {
 
     /** Show the popup above {@code anchor}, centered on it and kept on screen. */
     void show(View anchor) {
+        // The tap on the key that just closed this key's popup should only close it
+        if (anchor == sLastOutsideAnchor && android.os.SystemClock.uptimeMillis() - sLastOutsideAt < RETAP_GUARD_MS) {
+            sLastOutsideAnchor = null;
+            return;
+        }
         mAnchor = anchor;
         View root = anchor.getRootView();
         int[] size = popupSize(root);
-        mWindow = new PopupWindow(mRoot, size[0], size[1], true);
+        // Not focusable, so the keyboard stays up and keeps typing into the terminal. A tap
+        // outside closes the popup and still reaches what is under it.
+        mWindow = new PopupWindow(mRoot, size[0], size[1], false);
         mWindow.setBackgroundDrawable(new ColorDrawable(0));
         mWindow.setOutsideTouchable(true);
         mWindow.setElevation(dp(10));
+        mWindow.setTouchInterceptor((v, event) -> {
+            if (event.getAction() == android.view.MotionEvent.ACTION_OUTSIDE) {
+                sLastOutsideAnchor = mAnchor;
+                sLastOutsideAt = android.os.SystemClock.uptimeMillis();
+            }
+            return false;
+        });
         mWindow.setOnDismissListener(() -> {
+            sShowing.remove(this);
             if (mOnDismiss != null) mOnDismiss.run();
         });
+        sShowing.add(this);
         int[] position = popupPosition(anchor, size[0]);
         try {
             mWindow.showAtLocation(anchor, Gravity.BOTTOM | Gravity.START, position[0], position[1]);
         } catch (Exception ignored) {
             // Activity going away
+            sShowing.remove(this);
         }
     }
 
@@ -710,8 +748,10 @@ final class TabBarPopup {
         mDialog.setCancelable(cancelable);
         mDialog.setCanceledOnTouchOutside(cancelable);
         mDialog.setOnDismissListener(d -> {
+            sShowing.remove(this);
             if (mOnDismiss != null) mOnDismiss.run();
         });
+        sShowing.add(this);
         Window window = mDialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(0));
@@ -722,6 +762,7 @@ final class TabBarPopup {
         try {
             mDialog.show();
         } catch (Exception ignored) {
+            sShowing.remove(this);
             return;
         }
         if (focusInput != null) focusInput.requestFocus();
@@ -743,6 +784,13 @@ final class TabBarPopup {
 
     boolean isShowing() {
         return (mWindow != null && mWindow.isShowing()) || (mDialog != null && mDialog.isShowing());
+    }
+
+    /** Close every popup and panel, e.g. when the activity stops, so none outlives it. */
+    static void dismissAll() {
+        for (TabBarPopup popup : new java.util.ArrayList<>(sShowing)) popup.dismiss();
+        sShowing.clear();
+        sLastOutsideAnchor = null;
     }
 
     void dismiss() {

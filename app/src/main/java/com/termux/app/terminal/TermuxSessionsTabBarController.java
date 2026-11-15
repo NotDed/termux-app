@@ -148,6 +148,7 @@ public class TermuxSessionsTabBarController {
     }
 
     public void onStop() {
+        TabBarPopup.dismissAll();
         mVpnToggleController.stopPolling();
         mHandler.removeCallbacks(mSaveRunnable);
         saveSessions();
