@@ -142,6 +142,10 @@ final class TabBarPopup {
     private PopupWindow mWindow;
     private Dialog mDialog;
     private View mAnchor;
+    /** The anchor window's root view and the anchor's position, see {@link #trackAnchor}. */
+    private View mRootView;
+    private int mAnchorCenterX;
+    private int mAnchorTop;
     private Runnable mOnDismiss;
 
     TabBarPopup(Context context, @Nullable String title) {
@@ -664,35 +668,42 @@ final class TabBarPopup {
         return new int[]{width, height};
     }
 
-    private int[] popupSize(View root) {
+    /**
+     * Remember the window's root view and where the anchor is. Tabs are rebuilt whenever a
+     * session title changes, which detaches the anchor of an open tab menu; a detached view is
+     * its own root and sits at 0,0, so the last known values are kept until it is attached again.
+     */
+    private void trackAnchor() {
+        if (mAnchor == null || !mAnchor.isAttachedToWindow()) return;
+        mRootView = mAnchor.getRootView();
+        int[] location = new int[2];
+        mAnchor.getLocationInWindow(location);
+        mAnchorCenterX = location[0] + mAnchor.getWidth() / 2;
+        mAnchorTop = location[1];
+    }
+
+    private int[] popupSize() {
         int margin = dp(6);
-        int maxWidth = Math.min(dp(MAX_WIDTH_DP), root.getWidth() - 2 * margin);
+        int maxWidth = Math.min(dp(MAX_WIDTH_DP), mRootView.getWidth() - 2 * margin);
         int minWidth = Math.min(dp(MIN_WIDTH_DP), maxWidth);
-        return measure(minWidth, maxWidth, maxPopupHeight(root));
+        return measure(minWidth, maxWidth, maxPopupHeight());
     }
 
     /** At most 55% of the screen, and never higher than the space above the anchor. */
-    private int maxPopupHeight(View root) {
-        int max = Math.round(root.getHeight() * 0.55f);
-        if (mAnchor != null) {
-            int[] location = new int[2];
-            mAnchor.getLocationInWindow(location);
-            android.view.WindowInsets insets = root.getRootWindowInsets();
-            int top = insets == null ? 0 : insets.getSystemWindowInsetTop();
-            int above = location[1] - dp(4) - top - dp(8);
-            if (above > dp(120)) max = Math.min(max, above);
-        }
+    private int maxPopupHeight() {
+        int max = Math.round(mRootView.getHeight() * 0.55f);
+        android.view.WindowInsets insets = mRootView.getRootWindowInsets();
+        int top = insets == null ? 0 : insets.getSystemWindowInsetTop();
+        int above = mAnchorTop - dp(4) - top - dp(8);
+        if (above > dp(120)) max = Math.min(max, above);
         return max;
     }
 
-    private int[] popupPosition(View anchor, int width) {
-        View root = anchor.getRootView();
-        int[] location = new int[2];
-        anchor.getLocationInWindow(location);
+    private int[] popupPosition(int width) {
         int margin = dp(6);
-        int x = location[0] + anchor.getWidth() / 2 - width / 2;
-        x = Math.max(margin, Math.min(x, root.getWidth() - width - margin));
-        int y = root.getHeight() - location[1] + dp(4);
+        int x = mAnchorCenterX - width / 2;
+        x = Math.max(margin, Math.min(x, mRootView.getWidth() - width - margin));
+        int y = mRootView.getHeight() - mAnchorTop + dp(4);
         return new int[]{x, y};
     }
 
@@ -704,8 +715,9 @@ final class TabBarPopup {
             return;
         }
         mAnchor = anchor;
-        View root = anchor.getRootView();
-        int[] size = popupSize(root);
+        trackAnchor();
+        if (mRootView == null) return;
+        int[] size = popupSize();
         // Not focusable, so the keyboard stays up and keeps typing into the terminal. A tap
         // outside closes the popup and still reaches what is under it.
         mWindow = new PopupWindow(mRoot, size[0], size[1], false);
@@ -724,7 +736,7 @@ final class TabBarPopup {
             if (mOnDismiss != null) mOnDismiss.run();
         });
         sShowing.add(this);
-        int[] position = popupPosition(anchor, size[0]);
+        int[] position = popupPosition(size[0]);
         try {
             mWindow.showAtLocation(anchor, Gravity.BOTTOM | Gravity.START, position[0], position[1]);
         } catch (Exception ignored) {
@@ -770,9 +782,10 @@ final class TabBarPopup {
 
     /** Fit the size and position to new content after it was rebuilt while showing. */
     void relayout() {
-        if (mWindow != null && mWindow.isShowing() && mAnchor != null) {
-            int[] size = popupSize(mAnchor.getRootView());
-            int[] position = popupPosition(mAnchor, size[0]);
+        if (mWindow != null && mWindow.isShowing() && mRootView != null) {
+            trackAnchor();
+            int[] size = popupSize();
+            int[] position = popupPosition(size[0]);
             // The window keeps the BOTTOM gravity it was shown with, so y stays measured from the bottom
             mWindow.update(position[0], position[1], size[0], size[1]);
         } else if (mDialog != null && mDialog.isShowing()) {
