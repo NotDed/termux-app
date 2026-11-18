@@ -4,6 +4,10 @@ buildscript {
         google()
     }
     dependencies {
+        // A newer D8/R8 than the one bundled with this Android Gradle plugin: the bundled one
+        // crashes (NullPointerException) dexing some current libraries, like the Anthropic SDK's
+        // dependencies. It must come before the plugin to take its place.
+        classpath 'com.android.tools:r8:8.2.47'
         classpath 'com.android.tools.build:gradle:4.2.2'
     }
 }
