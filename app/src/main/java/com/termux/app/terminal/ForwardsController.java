@@ -175,6 +175,19 @@ public class ForwardsController {
         return !mPendingFailures.isEmpty();
     }
 
+    /** Offer to ask Claude why a forward failed, under the list. */
+    private void addAskClaude(Forward forward, String message) {
+        if (mPopup == null || !ClaudeAiPanels.isEnabled(mActivity)) return;
+        TabBarPopup popup = mPopup;
+        popup.addMessage(TabBarPopup.Kind.ERROR, message, mActivity.getString(R.string.action_ai_diagnose), () -> {
+            popup.dismiss();
+            String log = BackgroundShell.tail(forward.logFile(), 40);
+            ClaudeAiPanels.diagnose(mActivity, "A background port forward named \"" + forward.name + "\": ssh -N -o BatchMode=yes " +
+                "-o ExitOnForwardFailure=yes -L " + forward.spec + " -- " + forward.host +
+                " (key-based login only, no terminal for a password)", (log.isEmpty() ? "" : log + "\n") + message);
+        });
+    }
+
     /** Open the list of forwards. */
     public void open() {
         showPopup();
@@ -242,6 +255,7 @@ public class ForwardsController {
                     mFailed.add(f.name);
                     row.setDotColor(TabBarPopup.DOT_RED);
                     row.setSubtitle(failure, TabBarPopup.DOT_RED);
+                    addAskClaude(f, failure);
                 }
             }
             mPendingFailures.clear();
@@ -278,6 +292,7 @@ public class ForwardsController {
                         row.setChecked(false);
                         row.setDotColor(TabBarPopup.DOT_RED);
                         row.setSubtitle(message, TabBarPopup.DOT_RED);
+                        addAskClaude(forward, message);
                         mPopup.relayout();
                     } else {
                         // No toasts: keep it for the next time the popup opens and mark the key

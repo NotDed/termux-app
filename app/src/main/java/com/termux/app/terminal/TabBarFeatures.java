@@ -15,6 +15,8 @@ public final class TabBarFeatures {
     public static final String SSH = "ssh";
     public static final String SSH_REACHABILITY = "ssh_reachability";
     public static final String SESSION_RESTORE = "session_restore";
+    /** The Claude API helpers: what happened, ask for a command, ask about failures, name with AI. */
+    public static final String AI = "ai";
 
     private static final String PREFS_NAME = "tabbar_features";
 
@@ -51,8 +53,35 @@ public final class TabBarFeatures {
         panel.addHeader(context.getString(R.string.feature_group_sessions));
         add(context, panel, SESSION_RESTORE, R.string.feature_session_restore, R.string.feature_session_restore_desc, onChanged, null);
 
+        panel.addHeader(context.getString(R.string.feature_group_ai));
+        add(context, panel, AI, R.string.feature_ai, R.string.feature_ai_desc, onChanged, null);
+        if (context instanceof com.termux.app.TermuxActivity) {
+            com.termux.app.TermuxActivity activity = (com.termux.app.TermuxActivity) context;
+            String key = ClaudeApiKeyStore.describe(context);
+            panel.addLinkRow(context.getString(R.string.title_ai_key),
+                key != null ? key : context.getString(R.string.msg_ai_key_not_set), () -> {
+                    panel.dismiss();
+                    ClaudeAiPanels.showKeyEditor(activity, null);
+                });
+            addModelRow(context, panel, ClaudeAssistant.PREF_MAIN_MODEL, R.string.feature_ai_main_model);
+            addModelRow(context, panel, ClaudeAssistant.PREF_LIGHT_MODEL, R.string.feature_ai_light_model);
+        }
+
         panel.addButtons(new TabBarPopup.Button(context.getString(R.string.action_done), TabBarPopup.Button.PRIMARY, panel::dismiss));
         panel.showCentered(true, null);
+    }
+
+    /** A row that cycles the model used for one kind of request: Opus, Sonnet, Haiku. */
+    private static void addModelRow(Context context, TabBarPopup panel, String which, int label) {
+        TabBarPopup.Row[] row = new TabBarPopup.Row[1];
+        row[0] = panel.addLinkRow(context.getString(label),
+            ClaudeAssistant.modelLabel(ClaudeAssistant.getModel(context, which)), () -> {
+                java.util.List<String> models = ClaudeAssistant.MODELS;
+                String current = ClaudeAssistant.getModel(context, which);
+                String next = models.get((models.indexOf(current) + 1) % models.size());
+                ClaudeAssistant.setModel(context, which, next);
+                row[0].setSubtitle(ClaudeAssistant.modelLabel(next));
+            });
     }
 
     private static TabBarPopup.Row add(Context context, TabBarPopup panel, String key, int label, int description,

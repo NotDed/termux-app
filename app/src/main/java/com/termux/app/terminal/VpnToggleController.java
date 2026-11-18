@@ -192,7 +192,18 @@ public class VpnToggleController {
         panel.addMessage(TabBarPopup.Kind.ERROR, output.isEmpty() ? mActivity.getString(R.string.msg_vpn_failed)
             : lastLine(output), null, null);
         if (output.contains("\n")) panel.addOutput(output);
-        panel.addButtons(new TabBarPopup.Button(mActivity.getString(R.string.action_ok), TabBarPopup.Button.PRIMARY, panel::dismiss));
+        if (ClaudeAiPanels.isEnabled(mActivity)) {
+            panel.addButtons(
+                new TabBarPopup.Button(mActivity.getString(R.string.action_ai_diagnose), TabBarPopup.Button.TEXT, () -> {
+                    panel.dismiss();
+                    ClaudeAiPanels.diagnose(mActivity, "Turning the VPN on with ~/connect-vpn-termux.sh on: openconnect " +
+                        "--protocol=gp in user space, with ocproxy as a SOCKS5 proxy on 127.0.0.1:" + PROXY_PORT +
+                        ", no root. The script prints the end of the openconnect log.", output);
+                }),
+                new TabBarPopup.Button(mActivity.getString(R.string.action_ok), TabBarPopup.Button.PRIMARY, panel::dismiss));
+        } else {
+            panel.addButtons(new TabBarPopup.Button(mActivity.getString(R.string.action_ok), TabBarPopup.Button.PRIMARY, panel::dismiss));
+        }
         panel.showCentered(true, null);
     }
 

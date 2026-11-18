@@ -24,14 +24,17 @@ android {
 
         implementation project(":terminal-view")
         implementation project(":termux-shared")
+
+        // Claude API helpers in the tab bar (official Anthropic Java SDK)
+        implementation "com.anthropic:anthropic-java:3.3.0"
     }
 
     defaultConfig {
         applicationId "com.termux"
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
-        versionCode 1017
-        versionName "0.118.3-tabs.15"
+        versionCode 1018
+        versionName "0.118.3-tabs.16"
 
         if (appVersionName) versionName = appVersionName
         validateVersionName(versionName)
@@ -108,6 +111,14 @@ android {
         jniLibs {
             useLegacyPackaging true
         }
+        // The Anthropic SDK's dependencies each ship their own licence and module files
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/LICENSE*'
+        exclude 'META-INF/NOTICE*'
+        exclude 'META-INF/INDEX.LIST'
+        exclude 'META-INF/*.md'
+        exclude 'META-INF/versions/9/module-info.class'
+        exclude 'module-info.class'
     }
 
     applicationVariants.all { variant ->

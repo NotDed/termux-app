@@ -270,6 +270,13 @@ public class TermuxSessionsTabBarController {
             });
         }
 
+        if (ClaudeAiPanels.isEnabled(mActivity)) {
+            sheet.addLinkRow(mActivity.getString(R.string.action_ai_command), mActivity.getString(R.string.msg_ai_command_desc), () -> {
+                sheet.dismiss();
+                ClaudeAiPanels.command(mActivity, mActivity.getCurrentSession());
+            });
+        }
+
         sheet.addLinkRow(mActivity.getString(R.string.title_tab_emojis), mActivity.getString(R.string.msg_tools_tab_emojis), () -> {
             sheet.dismiss();
             showTabEmojisList();
@@ -617,6 +624,18 @@ public class TermuxSessionsTabBarController {
                 if (tabMeta != null) showHostEmojiPicker(tabMeta.host);
                 else showDefaultEmojiPicker();
             });
+        if (ClaudeAiPanels.isEnabled(mActivity)) {
+            popup.addLinkRow(mActivity.getString(R.string.action_ai_explain), mActivity.getString(R.string.msg_ai_explain_desc), () -> {
+                popup.dismiss();
+                ClaudeAiPanels.explain(mActivity, session);
+            });
+            if (!SessionMeta.isRenamed(session)) {
+                popup.addLinkRow(mActivity.getString(R.string.action_ai_name), mActivity.getString(R.string.msg_ai_name_desc), () -> {
+                    popup.dismiss();
+                    ClaudeAiPanels.name(mActivity, session, this::update);
+                });
+            }
+        }
         popup.addLinkRow(mActivity.getString(R.string.action_rename_session), null, () -> {
             popup.dismiss();
             showRename(session);
