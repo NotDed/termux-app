@@ -49,7 +49,7 @@ final class ExtraKeysEditor {
 
     private final TermuxActivity mActivity;
     private final File mFile;
-    private final Dialog mDialog;
+    private Dialog mDialog;
     private final LinearLayout mRowsView;
     private final TextView mStatus;
     private final TextView mUndoButton;
