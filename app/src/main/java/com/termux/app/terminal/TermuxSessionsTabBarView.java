@@ -32,12 +32,20 @@ public class TermuxSessionsTabBarView extends LinearLayout {
         mSwipeThreshold = 40 * context.getResources().getDisplayMetrics().density;
     }
 
+    /** Swiping switches sessions only while the tabs fit; otherwise the tab strip scrolls. */
+    private boolean mSwipeEnabled = true;
+
+    public void setSwipeEnabled(boolean enabled) {
+        mSwipeEnabled = enabled;
+    }
+
     public void setSwipeListener(@Nullable SwipeListener listener) {
         mSwipeListener = listener;
     }
 
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
+        if (!mSwipeEnabled) return false;
         switch (ev.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 mDownX = ev.getX();

@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class VpnToggleController {
 
-    private enum State { OFF, CONNECTING, ON }
+    enum State { OFF, CONNECTING, ON }
 
     private static final String SCRIPT_PATH = TermuxConstants.TERMUX_HOME_DIR_PATH + "/connect-vpn-termux.sh";
     private static final String PID_FILE_PATH = TermuxConstants.TERMUX_HOME_DIR_PATH + "/.cache/vpn/openconnect.pid";
@@ -49,6 +49,10 @@ public class VpnToggleController {
     private State mState = State.OFF;
     private boolean mCommandRunning;
     private boolean mPolling;
+    /** Where popups open, the tab bar's tools key. Falls back to the (detached) button. */
+    private android.view.View mAnchor;
+    /** Runs when the state changes, so the tools key and sheet can update. */
+    private Runnable mOnStateChanged;
     /** Runs once after the next successful "on" command, like opening an SSH host that needs the VPN. */
     private Runnable mOnConnected;
     /** Extra work to run on every poll tick, like refreshing the port forwards. */
@@ -74,6 +78,22 @@ public class VpnToggleController {
         applyState(State.OFF);
     }
 
+    public void setAnchor(android.view.View anchor) {
+        mAnchor = anchor;
+    }
+
+    public void setOnStateChanged(Runnable onStateChanged) {
+        mOnStateChanged = onStateChanged;
+    }
+
+    State getState() {
+        return mState;
+    }
+
+    private android.view.View anchor() {
+        return mAnchor != null ? mAnchor : mButton;
+    }
+
     public void startPolling() {
         if (mPolling) return;
         mPolling = true;
@@ -89,7 +109,12 @@ public class VpnToggleController {
     private void showMessage(TabBarPopup.Kind kind, String message) {
         TabBarPopup popup = new TabBarPopup(mActivity, mActivity.getString(R.string.action_vpn));
         popup.addMessage(kind, message, null, null);
-        popup.show(mButton);
+        popup.show(anchor());
+    }
+
+    /** Turn the VPN on (asking for the password) or offer to turn it off. */
+    public void toggle() {
+        onClick();
     }
 
     private void onClick() {
@@ -110,7 +135,7 @@ public class VpnToggleController {
                     popup.dismiss();
                     runScript("off", null);
                 }));
-            popup.show(mButton);
+            popup.show(anchor());
         }
     }
 
@@ -267,7 +292,9 @@ public class VpnToggleController {
     }
 
     private void applyState(State state) {
+        boolean changed = mState != state;
         mState = state;
+        if (changed && mOnStateChanged != null) mHandler.post(mOnStateChanged);
         switch (state) {
             case ON:
                 mButton.setText("vpn");
@@ -287,7 +314,7 @@ public class VpnToggleController {
         }
     }
 
-    private String getStatusText() {
+    String getStatusText() {
         switch (mState) {
             case ON: return mActivity.getString(R.string.msg_vpn_status_on, PROXY_PORT);
             case CONNECTING: return mActivity.getString(R.string.msg_vpn_status_connecting);

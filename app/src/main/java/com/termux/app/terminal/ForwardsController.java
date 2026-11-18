@@ -84,6 +84,12 @@ public class ForwardsController {
     private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
 
     private TabBarPopup mPopup;
+    /** Where the popup opens, the tab bar's tools key. Falls back to the (detached) button. */
+    private android.view.View mAnchor;
+    /** Runs when the active count or failures change, so the tools key and sheet can update. */
+    private Runnable mOnStateChanged;
+    private int mActiveCount;
+    private boolean mHadPendingFailure;
     private final Map<String, TabBarPopup.Row> mRows = new HashMap<>();
     /** Forwards whose last start failed, so the next refresh keeps showing the error. */
     private final java.util.Set<String> mFailed = new java.util.HashSet<>();
@@ -153,7 +159,32 @@ public class ForwardsController {
         });
     }
 
+    public void setAnchor(android.view.View anchor) {
+        mAnchor = anchor;
+    }
+
+    public void setOnStateChanged(Runnable onStateChanged) {
+        mOnStateChanged = onStateChanged;
+    }
+
+    int getActiveCount() {
+        return mActiveCount;
+    }
+
+    boolean hasPendingFailure() {
+        return !mPendingFailures.isEmpty();
+    }
+
+    /** Open the list of forwards. */
+    public void open() {
+        showPopup();
+    }
+
     private void applyCount(int active) {
+        boolean changed = active != mActiveCount || hasPendingFailure() != mHadPendingFailure;
+        mActiveCount = active;
+        mHadPendingFailure = hasPendingFailure();
+        if (changed && mOnStateChanged != null) mHandler.post(mOnStateChanged);
         if (active > 0) {
             mButton.setText("⇄" + active);
             mButton.setTextColor(ExtraKeysStyle.ON_ACCENT_TEXT_COLOR);
@@ -217,7 +248,7 @@ public class ForwardsController {
             mPopup.addFooter(mActivity.getString(R.string.msg_forwards_hint));
         }
 
-        mPopup.show(mButton);
+        mPopup.show(mAnchor != null ? mAnchor : mButton);
         refresh();
     }
 

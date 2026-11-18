@@ -14,6 +14,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -31,7 +32,9 @@ import java.util.concurrent.Executors;
 /**
  * Taskbar-like row of session tabs shown above the extra keys toolbar, so that sessions can be
  * switched without swiping in the left drawer from the screen edge (which conflicts with gesture
- * navigation). Also hosts the vpn, port forwards, snippets, ssh, new session and settings keys.
+ * navigation). Laid out as a dock: fixed-size tabs that scroll on the left with the new session key
+ * after them, and on the right only the pinned Claude usage and ssh keys plus a tools key that
+ * opens the VPN, port forwards, snippets and settings.
  */
 public class TermuxSessionsTabBarController {
 
@@ -39,6 +42,8 @@ public class TermuxSessionsTabBarController {
     private static final int CLOSE_POLL_INTERVAL_MS = 50;
     private static final int CLOSE_POLL_MAX_TRIES = 60;
     private static final int SAVE_DEBOUNCE_MS = 1000;
+    /** Every tab has this width from the start, instead of stretching to fill the bar. */
+    private static final int TAB_WIDTH_DP = 60;
 
     /** Colors for SSH tabs, picked by host name so a host always gets the same one. */
     private static final int[] HOST_COLORS = {
@@ -48,6 +53,9 @@ public class TermuxSessionsTabBarController {
     private final List<TermuxSession> mSessions;
     private final View mBarRoot;
     private final LinearLayout mTabsContainer;
+    private final HorizontalScrollView mTabsScroll;
+    private final TextView mToolsButton;
+    private TabBarPopup mToolsSheet;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService mProbeExecutor = Executors.newFixedThreadPool(4);
 
@@ -55,9 +63,6 @@ public class TermuxSessionsTabBarController {
     private final ForwardsController mForwardsController;
     private final ClaudeUsageController mClaudeUsageController;
     private final TextView mClaudeUsageButton;
-    private final TextView mVpnButton;
-    private final TextView mForwardsButton;
-    private final View mSnippetsButton;
     private final View mSshButton;
 
     private final Runnable mSaveRunnable = this::saveSessions;
@@ -67,6 +72,8 @@ public class TermuxSessionsTabBarController {
         mSessions = sessions;
         mBarRoot = barRoot;
         mTabsContainer = barRoot.findViewById(R.id.terminal_sessions_tabs);
+        mTabsScroll = barRoot.findViewById(R.id.terminal_sessions_tabs_scroll);
+        mToolsButton = barRoot.findViewById(R.id.tools_tab_button);
 
         if (barRoot instanceof TermuxSessionsTabBarView) {
             ((TermuxSessionsTabBarView) barRoot).setSwipeListener(forward -> {
@@ -77,8 +84,11 @@ public class TermuxSessionsTabBarController {
 
         barRoot.setBackgroundColor(ExtraKeysStyle.PANEL_COLOR);
 
-        mVpnButton = barRoot.findViewById(R.id.vpn_tab_button);
-        mVpnToggleController = new VpnToggleController(mActivity, mVpnButton);
+        // VPN and forwards live in the tools sheet: their controllers get a detached view to
+        // style, and open their popups from the tools key
+        mVpnToggleController = new VpnToggleController(mActivity, new TextView(mActivity));
+        mVpnToggleController.setAnchor(mToolsButton);
+        mVpnToggleController.setOnStateChanged(this::onToolsStateChanged);
 
         mClaudeUsageButton = barRoot.findViewById(R.id.claude_usage_tab_button);
         mClaudeUsageController = new ClaudeUsageController(mActivity, mClaudeUsageButton);
@@ -86,16 +96,13 @@ public class TermuxSessionsTabBarController {
             if (TabBarFeatures.isEnabled(mActivity, TabBarFeatures.CLAUDE_USAGE)) mClaudeUsageController.onTick();
         });
 
-        mForwardsButton = barRoot.findViewById(R.id.forwards_tab_button);
-        mForwardsController = new ForwardsController(mActivity, mForwardsButton,
+        mForwardsController = new ForwardsController(mActivity, new TextView(mActivity),
             () -> openEditor("forwards", ForwardsController.PATH));
+        mForwardsController.setAnchor(mToolsButton);
+        mForwardsController.setOnStateChanged(this::onToolsStateChanged);
         mVpnToggleController.addTickListener(() -> {
             if (TabBarFeatures.isEnabled(mActivity, TabBarFeatures.FORWARDS)) mForwardsController.refresh();
         });
-
-        mSnippetsButton = barRoot.findViewById(R.id.snippets_tab_button);
-        styleKey(mSnippetsButton);
-        mSnippetsButton.setOnClickListener(this::showSnippetsPopup);
 
         mSshButton = barRoot.findViewById(R.id.ssh_hosts_tab_button);
         styleKey(mSshButton);
@@ -113,9 +120,8 @@ public class TermuxSessionsTabBarController {
             return true;
         });
 
-        View settingsButton = barRoot.findViewById(R.id.settings_tab_button);
-        styleKey(settingsButton);
-        settingsButton.setOnClickListener(v -> TabBarFeatures.showDialog(mActivity, this::applyFeatures, this::showDefaultEmojiEditor));
+        mToolsButton.setOnClickListener(v -> showToolsSheet());
+        updateToolsKey();
 
         applyFeatures();
     }
@@ -127,11 +133,103 @@ public class TermuxSessionsTabBarController {
     /** Show or hide keys according to the enabled features and redraw the tabs. */
     public void applyFeatures() {
         mClaudeUsageButton.setVisibility(TabBarFeatures.isEnabled(mActivity, TabBarFeatures.CLAUDE_USAGE) ? View.VISIBLE : View.GONE);
-        mVpnButton.setVisibility(TabBarFeatures.isEnabled(mActivity, TabBarFeatures.VPN) ? View.VISIBLE : View.GONE);
-        mForwardsButton.setVisibility(TabBarFeatures.isEnabled(mActivity, TabBarFeatures.FORWARDS) ? View.VISIBLE : View.GONE);
-        mSnippetsButton.setVisibility(TabBarFeatures.isEnabled(mActivity, TabBarFeatures.SNIPPETS) ? View.VISIBLE : View.GONE);
         mSshButton.setVisibility(TabBarFeatures.isEnabled(mActivity, TabBarFeatures.SSH) ? View.VISIBLE : View.GONE);
         update();
+        updateToolsKey();
+        refreshTools();
+    }
+
+    /** VPN or forwards state changed: update the tools key's dot and an open tools sheet. */
+    private void onToolsStateChanged() {
+        updateToolsKey();
+        refreshTools();
+    }
+
+    /**
+     * The tools key gets a small dot so the VPN and forwards stay visible without their own keys:
+     * red if a forward failed, amber while the VPN connects, accent when the VPN or a forward is on.
+     */
+    private void updateToolsKey() {
+        boolean vpn = TabBarFeatures.isEnabled(mActivity, TabBarFeatures.VPN);
+        boolean forwards = TabBarFeatures.isEnabled(mActivity, TabBarFeatures.FORWARDS);
+        VpnToggleController.State vpnState = mVpnToggleController.getState();
+
+        int dotColor = 0;
+        if (forwards && mForwardsController.hasPendingFailure()) dotColor = TabBarPopup.DOT_RED;
+        else if (vpn && vpnState == VpnToggleController.State.CONNECTING) dotColor = TabBarPopup.DOT_AMBER;
+        else if ((vpn && vpnState == VpnToggleController.State.ON) || (forwards && mForwardsController.getActiveCount() > 0))
+            dotColor = ExtraKeysStyle.ACCENT_COLOR;
+
+        Drawable key = ExtraKeysStyle.keyBackground(mActivity, ExtraKeysStyle.KEY_COLOR, 0);
+        if (dotColor == 0 || Build.VERSION.SDK_INT < 23) {
+            mToolsButton.setBackground(key);
+            return;
+        }
+        GradientDrawable dot = new GradientDrawable();
+        dot.setShape(GradientDrawable.OVAL);
+        dot.setColor(dotColor);
+        LayerDrawable layers = new LayerDrawable(new Drawable[]{key, dot});
+        int size = Math.round(ExtraKeysStyle.dp(mActivity, 6));
+        int end = ExtraKeysStyle.insetHorizontalPx(mActivity) + Math.round(ExtraKeysStyle.dp(mActivity, 3));
+        int top = ExtraKeysStyle.insetVerticalPx(mActivity) + Math.round(ExtraKeysStyle.dp(mActivity, 3));
+        layers.setLayerGravity(1, Gravity.TOP | Gravity.END);
+        layers.setLayerSize(1, size, size);
+        layers.setLayerInset(1, 0, top, end, 0);
+        mToolsButton.setBackground(layers);
+    }
+
+    /** The sheet behind the tools key: VPN, port forwards, snippets and settings. */
+    private void showToolsSheet() {
+        TabBarPopup sheet = new TabBarPopup(mActivity, mActivity.getString(R.string.title_tools));
+        mToolsSheet = sheet;
+        sheet.setOnDismiss(() -> { if (mToolsSheet == sheet) mToolsSheet = null; });
+        fillToolsSheet(sheet);
+        sheet.show(mToolsButton);
+    }
+
+    /** Rebuild an open tools sheet, so its VPN and forwards rows stay current. */
+    private void refreshTools() {
+        TabBarPopup sheet = mToolsSheet;
+        if (sheet == null || !sheet.isShowing()) return;
+        sheet.clearRows();
+        fillToolsSheet(sheet);
+        sheet.relayout();
+    }
+
+    private void fillToolsSheet(TabBarPopup sheet) {
+        if (TabBarFeatures.isEnabled(mActivity, TabBarFeatures.VPN)) {
+            VpnToggleController.State state = mVpnToggleController.getState();
+            TabBarPopup.Row vpnRow = sheet.addSwitchRow(mActivity.getString(R.string.feature_vpn),
+                mVpnToggleController.getStatusText(), true, state != VpnToggleController.State.OFF, checked -> {
+                    sheet.dismiss();
+                    mVpnToggleController.toggle();
+                });
+            vpnRow.setDotColor(state == VpnToggleController.State.ON ? TabBarPopup.DOT_GREEN
+                : state == VpnToggleController.State.CONNECTING ? TabBarPopup.DOT_AMBER : TabBarPopup.DOT_GREY);
+        }
+
+        if (TabBarFeatures.isEnabled(mActivity, TabBarFeatures.FORWARDS)) {
+            int active = mForwardsController.getActiveCount();
+            String subtitle = mForwardsController.hasPendingFailure() ? mActivity.getString(R.string.msg_tools_forwards_failed)
+                : active > 0 ? mActivity.getResources().getQuantityString(R.plurals.msg_tools_forwards_active, active, active)
+                : mActivity.getString(R.string.msg_tools_forwards_none);
+            sheet.addLinkRow(mActivity.getString(R.string.feature_forwards), subtitle, () -> {
+                sheet.dismiss();
+                mForwardsController.open();
+            });
+        }
+
+        if (TabBarFeatures.isEnabled(mActivity, TabBarFeatures.SNIPPETS)) {
+            sheet.addLinkRow(mActivity.getString(R.string.feature_snippets), mActivity.getString(R.string.msg_tools_snippets), () -> {
+                sheet.dismiss();
+                showSnippetsPopup(mToolsButton);
+            });
+        }
+
+        sheet.addLinkRow(mActivity.getString(R.string.action_tabbar_settings), mActivity.getString(R.string.msg_tools_settings), () -> {
+            sheet.dismiss();
+            TabBarFeatures.showDialog(mActivity, this::applyFeatures, this::showDefaultEmojiEditor);
+        });
     }
 
     /** Start refreshing the VPN and forwards state while the activity is visible. */
@@ -160,6 +258,7 @@ public class TermuxSessionsTabBarController {
         TerminalSession current = mActivity.getCurrentSession();
         float density = mActivity.getResources().getDisplayMetrics().density;
         int padding = Math.round(4 * density);
+        View currentTab = null;
 
         for (int i = 0; i < count; i++) {
             TermuxSession termuxSession = mSessions.get(i);
@@ -167,7 +266,8 @@ public class TermuxSessionsTabBarController {
             if (session == null) continue;
 
             TextView tab = new TextView(mActivity);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                Math.round(TAB_WIDTH_DP * density), LinearLayout.LayoutParams.MATCH_PARENT);
             tab.setLayoutParams(params);
             tab.setGravity(Gravity.CENTER);
             tab.setPadding(padding, 0, padding, 0);
@@ -203,7 +303,25 @@ public class TermuxSessionsTabBarController {
             });
 
             mTabsContainer.addView(tab);
+            if (isCurrent) currentTab = tab;
         }
+
+        // Keep the current tab in view, and let swipes switch sessions only while nothing scrolls
+        final View shownTab = currentTab;
+        mTabsScroll.post(() -> {
+            View content = mTabsScroll.getChildAt(0);
+            boolean overflows = content != null && content.getWidth() > mTabsScroll.getWidth();
+            if (mBarRoot instanceof TermuxSessionsTabBarView)
+                ((TermuxSessionsTabBarView) mBarRoot).setSwipeEnabled(!overflows);
+            if (overflows && shownTab != null) {
+                int left = shownTab.getLeft();
+                int right = shownTab.getRight();
+                int scroll = mTabsScroll.getScrollX();
+                int width = mTabsScroll.getWidth();
+                if (left < scroll) mTabsScroll.smoothScrollTo(left, 0);
+                else if (right > scroll + width) mTabsScroll.smoothScrollTo(right - width, 0);
+            }
+        });
 
         mHandler.removeCallbacks(mSaveRunnable);
         mHandler.postDelayed(mSaveRunnable, SAVE_DEBOUNCE_MS);

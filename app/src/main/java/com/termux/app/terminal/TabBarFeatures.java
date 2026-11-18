@@ -33,15 +33,17 @@ public final class TabBarFeatures {
     public static void showDialog(Context context, Runnable onChanged, Runnable editDefaultEmoji) {
         TabBarPopup panel = new TabBarPopup(context, context.getString(R.string.title_tabbar_features));
 
-        panel.addHeader(context.getString(R.string.feature_group_keys));
+        panel.addHeader(context.getString(R.string.feature_group_on_bar));
         add(context, panel, CLAUDE_USAGE, R.string.feature_claude_usage, R.string.feature_claude_usage_desc, onChanged, null);
-        add(context, panel, VPN, R.string.feature_vpn, R.string.feature_vpn_desc, onChanged, null);
-        add(context, panel, FORWARDS, R.string.feature_forwards, R.string.feature_forwards_desc, onChanged, null);
-        add(context, panel, SNIPPETS, R.string.feature_snippets, R.string.feature_snippets_desc, onChanged, null);
         TabBarPopup.Row[] sshOptions = new TabBarPopup.Row[2];
         add(context, panel, SSH, R.string.feature_ssh, R.string.feature_ssh_desc, onChanged, checked -> {
             for (TabBarPopup.Row row : sshOptions) row.setEnabled(checked);
         });
+
+        panel.addHeader(context.getString(R.string.feature_group_in_tools));
+        add(context, panel, VPN, R.string.feature_vpn, R.string.feature_vpn_desc, onChanged, null);
+        add(context, panel, FORWARDS, R.string.feature_forwards, R.string.feature_forwards_desc, onChanged, null);
+        add(context, panel, SNIPPETS, R.string.feature_snippets, R.string.feature_snippets_desc, onChanged, null);
 
         panel.addHeader(context.getString(R.string.feature_group_ssh));
         sshOptions[0] = add(context, panel, SSH_REACHABILITY, R.string.feature_ssh_reachability, R.string.feature_ssh_reachability_desc, onChanged, null);

@@ -60,7 +60,7 @@
     <string name="msg_claude_usage_error">Could not load usage (%1$s)</string>
     <string name="action_forwards">Port forwards</string>
     <string name="action_snippets">Snippets</string>
-    <string name="action_tabbar_settings">Tab bar features</string>
+    <string name="action_tabbar_settings">Settings</string>
     <string name="title_tabbar_features">Tab bar</string>
     <string name="feature_vpn">VPN</string>
     <string name="feature_forwards">Port forwards</string>
@@ -295,6 +295,18 @@
     <string name="feature_session_restore_desc">Offer to reopen the tabs from last time</string>
     <string name="action_done">Done</string>
     <string name="action_cancel">Cancel</string>
+    <string name="action_tools">Tools</string>
+    <string name="title_tools">Tools</string>
+    <string name="feature_group_on_bar">On the bar</string>
+    <string name="feature_group_in_tools">In Tools ☰</string>
+    <string name="msg_tools_forwards_none">None active</string>
+    <string name="msg_tools_forwards_failed">A forward failed · open to see why</string>
+    <string name="msg_tools_snippets">Saved commands</string>
+    <string name="msg_tools_settings">Features and default tab emoji</string>
+    <plurals name="msg_tools_forwards_active">
+        <item quantity="one">%d active</item>
+        <item quantity="other">%d active</item>
+    </plurals>
     <string name="action_clear">Clear</string>
     <string name="action_save">Save</string>
     <string name="msg_emoji_hint">Type or paste an emoji</string>
