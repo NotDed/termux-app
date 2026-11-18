@@ -11,11 +11,11 @@ import android.graphics.drawable.InsetDrawable;
 public final class ExtraKeysStyle {
 
     /** Background of the panel behind the keys. */
-    public static final int PANEL_COLOR = 0xFF0E0E10;
+    public static final int PANEL_COLOR = 0xFF000000;
     /** Fill of a key at rest. */
-    public static final int KEY_COLOR = 0xFF2B2B30;
+    public static final int KEY_COLOR = 0xFF16161A;
     /** Fill of a key while pressed. */
-    public static final int KEY_PRESSED_COLOR = 0xFF45454D;
+    public static final int KEY_PRESSED_COLOR = 0xFF2C2C33;
     /** Accent used for active modifiers and the active session tab. */
     public static final int ACCENT_COLOR = 0xFF80DEEA;
     /** Text on top of an accent fill. */

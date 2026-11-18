@@ -45,9 +45,11 @@ public class TermuxSessionsTabBarController {
     /** Every tab has this width from the start, instead of stretching to fill the bar. */
     private static final int TAB_WIDTH_DP = 60;
 
-    /** Colors for SSH tabs, picked by host name so a host always gets the same one. */
-    private static final int[] HOST_COLORS = {
-        0xFFEF5350, 0xFFFFA726, 0xFFFFEE58, 0xFF66BB6A, 0xFF26C6DA, 0xFF42A5F5, 0xFFAB47BC, 0xFFEC407A};
+    /** Quick picks in the emoji picker, 3 rows of 8. */
+    private static final List<String> QUICK_EMOJIS = java.util.Arrays.asList(
+        "🐚", "🐺", "🦊", "🐙", "🐧", "🦉", "🐝", "🐢",
+        "🌿", "🌊", "🔥", "⚡", "🌙", "⭐", "💎", "🍀",
+        "🖥", "💻", "🛰", "🧪", "🔧", "📦", "🚀", "🎯");
 
     private final TermuxActivity mActivity;
     private final List<TermuxSession> mSessions;
@@ -56,6 +58,8 @@ public class TermuxSessionsTabBarController {
     private final HorizontalScrollView mTabsScroll;
     private final TextView mToolsButton;
     private TabBarPopup mToolsSheet;
+    /** Commands of Claude accounts that don't ring the terminal bell yet, so their prompts can't set red dots. */
+    private List<String> mClaudeWithoutBell = new java.util.ArrayList<>();
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService mProbeExecutor = Executors.newFixedThreadPool(4);
 
@@ -185,6 +189,46 @@ public class TermuxSessionsTabBarController {
         sheet.setOnDismiss(() -> { if (mToolsSheet == sheet) mToolsSheet = null; });
         fillToolsSheet(sheet);
         sheet.show(mToolsButton);
+        checkClaudeBell();
+    }
+
+    /** Find Claude accounts not set to ring the terminal bell, off the main thread, then refresh the sheet. */
+    private void checkClaudeBell() {
+        mProbeExecutor.execute(() -> {
+            List<String> missing = new java.util.ArrayList<>();
+            for (ClaudeUsage.Account account : ClaudeUsage.discoverAccounts(TermuxConstants.TERMUX_HOME_DIR_PATH)) {
+                if (!ringsBell(account)) missing.add(account.command());
+            }
+            mHandler.post(() -> {
+                mClaudeWithoutBell = missing;
+                refreshTools();
+            });
+        });
+    }
+
+    /** Whether Claude Code for this account sends a terminal bell when it needs input. */
+    private static boolean ringsBell(ClaudeUsage.Account account) {
+        // The default account keeps its settings in ~/.claude.json, others inside their folder
+        java.io.File config = "personal".equals(account.name) || account.configDir.getName().equals(".claude")
+            ? new java.io.File(TermuxConstants.TERMUX_HOME_DIR_PATH, ".claude.json")
+            : new java.io.File(account.configDir, ".claude.json");
+        if (!config.isFile()) return true; // Never set up, nothing to tell
+        try {
+            String json = new String(java.nio.file.Files.readAllBytes(config.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+            String channel = new org.json.JSONObject(json).optString("preferredNotifChannel", "");
+            return "terminal_bell".equals(channel) || "iterm2_with_bell".equals(channel);
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    /** How to make Claude ring the bell, so its prompts mark tabs with a red dot. */
+    private void showClaudeBellHelp() {
+        TabBarPopup panel = new TabBarPopup(mActivity, mActivity.getString(R.string.title_claude_bell));
+        panel.addMessage(TabBarPopup.Kind.INFO, mActivity.getString(R.string.msg_claude_bell_why), null, null);
+        panel.addOutput(mActivity.getString(R.string.msg_claude_bell_steps, TextUtils.join(", ", mClaudeWithoutBell)));
+        panel.addButtons(new TabBarPopup.Button(mActivity.getString(R.string.action_ok), TabBarPopup.Button.PRIMARY, panel::dismiss));
+        panel.showCentered(true, null);
     }
 
     /** Rebuild an open tools sheet, so its VPN and forwards rows stay current. */
@@ -226,9 +270,22 @@ public class TermuxSessionsTabBarController {
             });
         }
 
+        sheet.addLinkRow(mActivity.getString(R.string.title_tab_emojis), mActivity.getString(R.string.msg_tools_tab_emojis), () -> {
+            sheet.dismiss();
+            showTabEmojisList();
+        });
+
+        if (!mClaudeWithoutBell.isEmpty()) {
+            TabBarPopup.Row bell = sheet.addLinkRow(mActivity.getString(R.string.title_claude_bell),
+                mActivity.getString(R.string.msg_tools_claude_bell, TextUtils.join(", ", mClaudeWithoutBell)), () -> {
+                    sheet.dismiss();
+                    showClaudeBellHelp();
+                });
+        }
+
         sheet.addLinkRow(mActivity.getString(R.string.action_tabbar_settings), mActivity.getString(R.string.msg_tools_settings), () -> {
             sheet.dismiss();
-            TabBarFeatures.showDialog(mActivity, this::applyFeatures, this::showDefaultEmojiEditor);
+            TabBarFeatures.showDialog(mActivity, this::applyFeatures);
         });
     }
 
@@ -254,7 +311,6 @@ public class TermuxSessionsTabBarController {
         mBarRoot.setVisibility(View.VISIBLE);
         mTabsContainer.removeAllViews();
 
-        boolean hostColors = TabBarFeatures.isEnabled(mActivity, TabBarFeatures.HOST_COLORS);
         TerminalSession current = mActivity.getCurrentSession();
         float density = mActivity.getResources().getDisplayMetrics().density;
         int padding = Math.round(4 * density);
@@ -278,9 +334,7 @@ public class TermuxSessionsTabBarController {
             tab.setText(emoji != null ? emoji : getTabTitle(i, session));
 
             boolean isCurrent = session == current;
-            SessionMeta meta = SessionMeta.get(session);
-            int hostColor = hostColors && meta != null ? getHostColor(meta.host) : 0;
-            tab.setBackground(getTabBackground(isCurrent, hostColor, SessionAttention.has(session)));
+            tab.setBackground(getTabBackground(isCurrent, SessionAttention.has(session)));
             tab.setTypeface(null, isCurrent ? Typeface.BOLD : Typeface.NORMAL);
 
             boolean running = session.isRunning();
@@ -289,7 +343,8 @@ public class TermuxSessionsTabBarController {
             else
                 tab.setPaintFlags(tab.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG);
 
-            int textColor = isCurrent ? Color.WHITE : ExtraKeysStyle.KEY_HINT_TEXT_COLOR;
+            // On black, the current tab is just an accent outline with accent text
+            int textColor = isCurrent ? ExtraKeysStyle.ACCENT_COLOR : ExtraKeysStyle.KEY_HINT_TEXT_COLOR;
             if (!running && session.getExitStatus() != 0) textColor = Color.RED;
             tab.setTextColor(textColor);
 
@@ -327,57 +382,37 @@ public class TermuxSessionsTabBarController {
         mHandler.postDelayed(mSaveRunnable, SAVE_DEBOUNCE_MS);
     }
 
-    private static int getHostColor(String host) {
-        return HOST_COLORS[Math.abs(host.hashCode() % HOST_COLORS.length)];
+    /**
+     * A tab's background: the current tab is only an accent outline on black, the others a dim
+     * keycap, plus a red dot in the top corner when the session needs attention.
+     */
+    private Drawable getTabBackground(boolean isCurrent, boolean attention) {
+        Drawable key = isCurrent ? outlineKey(ExtraKeysStyle.ACCENT_COLOR)
+            : ExtraKeysStyle.keyBackground(mActivity, ExtraKeysStyle.KEY_COLOR, 0);
+        if (!attention || Build.VERSION.SDK_INT < 23) return key;
+
+        GradientDrawable dot = new GradientDrawable();
+        dot.setShape(GradientDrawable.OVAL);
+        dot.setColor(TabBarPopup.DOT_RED);
+        LayerDrawable layers = new LayerDrawable(new Drawable[]{key, dot});
+        int size = Math.round(ExtraKeysStyle.dp(mActivity, 7));
+        int end = ExtraKeysStyle.insetHorizontalPx(mActivity) + Math.round(ExtraKeysStyle.dp(mActivity, 3));
+        int top = ExtraKeysStyle.insetVerticalPx(mActivity) + Math.round(ExtraKeysStyle.dp(mActivity, 3));
+        layers.setLayerGravity(1, Gravity.TOP | Gravity.END);
+        layers.setLayerSize(1, size, size);
+        layers.setLayerInset(1, 0, top, end, 0);
+        return layers;
     }
 
-    /** A keycap, plus a colored bar along the bottom for SSH tabs when host colors are on. */
-    /**
-     * A keycap, plus a colored bar along the bottom for SSH tabs when host colors are on, and a
-     * red dot in the top corner when the session needs attention.
-     */
-    private Drawable getTabBackground(boolean isCurrent, int hostColor, boolean attention) {
-        int fill = isCurrent ? ExtraKeysStyle.KEY_PRESSED_COLOR : ExtraKeysStyle.KEY_COLOR;
-        int stroke = isCurrent ? (hostColor != 0 ? hostColor : ExtraKeysStyle.ACCENT_COLOR) : 0;
-        Drawable key = ExtraKeysStyle.keyBackground(mActivity, fill, stroke);
-        if ((hostColor == 0 && !attention) || Build.VERSION.SDK_INT < 23) return key;
-
-        java.util.List<Drawable> parts = new java.util.ArrayList<>();
-        parts.add(key);
-        int barIndex = -1, dotIndex = -1;
-
-        if (hostColor != 0) {
-            GradientDrawable bar = new GradientDrawable();
-            bar.setColor(hostColor);
-            bar.setCornerRadius(ExtraKeysStyle.dp(mActivity, 1.5f));
-            barIndex = parts.size();
-            parts.add(bar);
-        }
-        if (attention) {
-            GradientDrawable dot = new GradientDrawable();
-            dot.setShape(GradientDrawable.OVAL);
-            dot.setColor(TabBarPopup.DOT_RED);
-            dotIndex = parts.size();
-            parts.add(dot);
-        }
-
-        LayerDrawable layers = new LayerDrawable(parts.toArray(new Drawable[0]));
-        if (barIndex >= 0) {
-            int side = ExtraKeysStyle.insetHorizontalPx(mActivity) + Math.round(ExtraKeysStyle.dp(mActivity, 6));
-            int bottom = ExtraKeysStyle.insetVerticalPx(mActivity) + Math.round(ExtraKeysStyle.dp(mActivity, 2));
-            layers.setLayerGravity(barIndex, Gravity.BOTTOM | Gravity.FILL_HORIZONTAL);
-            layers.setLayerHeight(barIndex, Math.round(ExtraKeysStyle.dp(mActivity, 3)));
-            layers.setLayerInset(barIndex, side, 0, side, bottom);
-        }
-        if (dotIndex >= 0) {
-            int size = Math.round(ExtraKeysStyle.dp(mActivity, 7));
-            int end = ExtraKeysStyle.insetHorizontalPx(mActivity) + Math.round(ExtraKeysStyle.dp(mActivity, 3));
-            int top = ExtraKeysStyle.insetVerticalPx(mActivity) + Math.round(ExtraKeysStyle.dp(mActivity, 3));
-            layers.setLayerGravity(dotIndex, Gravity.TOP | Gravity.END);
-            layers.setLayerSize(dotIndex, size, size);
-            layers.setLayerInset(dotIndex, 0, top, end, 0);
-        }
-        return layers;
+    /** A keycap with no fill and a 1.5dp outline, so only the outline lights up on OLED. */
+    private Drawable outlineKey(int color) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(0);
+        shape.setCornerRadius(ExtraKeysStyle.dp(mActivity, ExtraKeysStyle.CORNER_RADIUS_DP));
+        shape.setStroke(Math.max(1, Math.round(ExtraKeysStyle.dp(mActivity, 1.5f))), color);
+        int h = ExtraKeysStyle.insetHorizontalPx(mActivity);
+        int v = ExtraKeysStyle.insetVerticalPx(mActivity);
+        return new android.graphics.drawable.InsetDrawable(shape, h, v, h, v);
     }
 
     /**
@@ -391,30 +426,64 @@ public class TermuxSessionsTabBarController {
         return TabEmojis.getDefault(mActivity);
     }
 
-    /** A centered panel to set or clear an emoji. {@code save} gets the new value, or null to clear. */
-    private void showEmojiEditor(String title, String current, java.util.function.Consumer<String> save) {
+    /**
+     * The emoji picker: a quick-pick grid (one tap saves), a field for any other emoji with the
+     * keyboard open, and Clear. {@code save} gets the new emoji, or null to clear it.
+     */
+    private void showEmojiPicker(String title, String scope, String current, java.util.function.Consumer<String> save) {
         TabBarPopup panel = new TabBarPopup(mActivity, title);
-        EditText[] holder = new EditText[1];
-        Runnable apply = () -> {
-            save.accept(holder[0].getText().toString());
+        panel.addFooter(scope);
+        Runnable[] done = new Runnable[1];
+        java.util.function.Consumer<String> pick = emoji -> {
+            save.accept(emoji);
             panel.dismiss();
             update();
         };
-        holder[0] = panel.addInput(mActivity.getString(R.string.msg_emoji_hint), current, false, apply);
+        panel.addGrid(QUICK_EMOJIS, 8, pick);
+        EditText input = panel.addInput(mActivity.getString(R.string.msg_emoji_hint), current, false,
+            () -> done[0].run());
+        done[0] = () -> pick.accept(input.getText().toString());
         panel.addButtons(
-            new TabBarPopup.Button(mActivity.getString(R.string.action_clear), TabBarPopup.Button.TEXT, () -> {
-                save.accept(null);
-                panel.dismiss();
-                update();
-            }),
+            new TabBarPopup.Button(mActivity.getString(R.string.action_clear), TabBarPopup.Button.TEXT, () -> pick.accept(null)),
             new TabBarPopup.Button(mActivity.getString(R.string.action_cancel), TabBarPopup.Button.TEXT, panel::dismiss),
-            new TabBarPopup.Button(mActivity.getString(R.string.action_save), TabBarPopup.Button.PRIMARY, apply));
-        panel.showCentered(true, holder[0]);
+            new TabBarPopup.Button(mActivity.getString(R.string.action_save), TabBarPopup.Button.PRIMARY, () -> done[0].run()));
+        panel.showCentered(true, input);
     }
 
-    private void showDefaultEmojiEditor() {
-        showEmojiEditor(mActivity.getString(R.string.title_default_tab_emoji), TabEmojis.getDefault(mActivity),
+    /** Picker for the emoji of every tab of an SSH host. */
+    private void showHostEmojiPicker(String host) {
+        showEmojiPicker(mActivity.getString(R.string.title_host_emoji, host),
+            mActivity.getString(R.string.msg_emoji_scope_host, host), TabEmojis.getHost(mActivity, host),
+            emoji -> TabEmojis.setHost(mActivity, host, emoji));
+    }
+
+    /** Picker for the emoji of every local tab. */
+    private void showDefaultEmojiPicker() {
+        showEmojiPicker(mActivity.getString(R.string.title_default_tab_emoji),
+            mActivity.getString(R.string.msg_emoji_scope_local), TabEmojis.getDefault(mActivity),
             emoji -> TabEmojis.setDefault(mActivity, emoji));
+    }
+
+    /** All tab emojis in one place: local tabs, then every SSH host. */
+    private void showTabEmojisList() {
+        TabBarPopup panel = new TabBarPopup(mActivity, mActivity.getString(R.string.title_tab_emojis));
+        String none = mActivity.getString(R.string.msg_emoji_none);
+        String local = TabEmojis.getDefault(mActivity);
+        panel.addLinkRow((local != null ? local + "  " : "") + mActivity.getString(R.string.label_local_tabs),
+            local != null ? null : none, () -> {
+                panel.dismiss();
+                showDefaultEmojiPicker();
+            });
+        List<SshConfigHosts.HostEntry> hosts = SshConfigHosts.read();
+        if (!hosts.isEmpty()) panel.addHeader(mActivity.getString(R.string.label_ssh_hosts));
+        for (SshConfigHosts.HostEntry host : hosts) {
+            String emoji = TabEmojis.getHost(mActivity, host.alias);
+            panel.addLinkRow((emoji != null ? emoji + "  " : "") + host.alias, emoji != null ? null : none, () -> {
+                panel.dismiss();
+                showHostEmojiPicker(host.alias);
+            });
+        }
+        panel.show(mToolsButton);
     }
 
     private static String getTabTitle(int index, TerminalSession session) {
@@ -448,12 +517,7 @@ public class TermuxSessionsTabBarController {
         for (SshConfigHosts.HostEntry host : hosts) {
             String emoji = TabEmojis.getHost(mActivity, host.alias);
             TabBarPopup.Row row = popup.addRow((emoji != null ? emoji + "  " : "") + host.alias, host.describe(), probe, "tmux",
-                () -> openSsh(popup, host, false),
-                () -> {
-                    popup.dismiss();
-                    showEmojiEditor(mActivity.getString(R.string.title_host_emoji, host.alias),
-                        TabEmojis.getHost(mActivity, host.alias), value -> TabEmojis.setHost(mActivity, host.alias, value));
-                },
+                () -> openSsh(popup, host, false), null,
                 () -> openSsh(popup, host, true));
             if (probe) {
                 mProbeExecutor.execute(() -> {
@@ -544,6 +608,15 @@ public class TermuxSessionsTabBarController {
     private void showTabMenu(View anchor, TerminalSession session) {
         int index = indexOf(session);
         TabBarPopup popup = new TabBarPopup(mActivity, getTabTitle(index, session));
+        SessionMeta tabMeta = SessionMeta.get(session);
+        String tabEmoji = tabMeta != null ? TabEmojis.getHost(mActivity, tabMeta.host) : TabEmojis.getDefault(mActivity);
+        popup.addLinkRow((tabEmoji != null ? tabEmoji + "  " : "") + mActivity.getString(R.string.action_tab_emoji),
+            tabMeta != null ? mActivity.getString(R.string.msg_emoji_menu_host, tabMeta.host)
+                : mActivity.getString(R.string.msg_emoji_menu_local), () -> {
+                popup.dismiss();
+                if (tabMeta != null) showHostEmojiPicker(tabMeta.host);
+                else showDefaultEmojiPicker();
+            });
         popup.addLinkRow(mActivity.getString(R.string.action_rename_session), null, () -> {
             popup.dismiss();
             showRename(session);

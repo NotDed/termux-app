@@ -14,7 +14,6 @@ public final class TabBarFeatures {
     public static final String SNIPPETS = "snippets";
     public static final String SSH = "ssh";
     public static final String SSH_REACHABILITY = "ssh_reachability";
-    public static final String HOST_COLORS = "host_colors";
     public static final String SESSION_RESTORE = "session_restore";
 
     private static final String PREFS_NAME = "tabbar_features";
@@ -30,12 +29,12 @@ public final class TabBarFeatures {
     }
 
     /** Show the features panel. {@code onChanged} runs after every change. */
-    public static void showDialog(Context context, Runnable onChanged, Runnable editDefaultEmoji) {
+    public static void showDialog(Context context, Runnable onChanged) {
         TabBarPopup panel = new TabBarPopup(context, context.getString(R.string.title_tabbar_features));
 
         panel.addHeader(context.getString(R.string.feature_group_on_bar));
         add(context, panel, CLAUDE_USAGE, R.string.feature_claude_usage, R.string.feature_claude_usage_desc, onChanged, null);
-        TabBarPopup.Row[] sshOptions = new TabBarPopup.Row[2];
+        TabBarPopup.Row[] sshOptions = new TabBarPopup.Row[1];
         add(context, panel, SSH, R.string.feature_ssh, R.string.feature_ssh_desc, onChanged, checked -> {
             for (TabBarPopup.Row row : sshOptions) row.setEnabled(checked);
         });
@@ -47,18 +46,10 @@ public final class TabBarFeatures {
 
         panel.addHeader(context.getString(R.string.feature_group_ssh));
         sshOptions[0] = add(context, panel, SSH_REACHABILITY, R.string.feature_ssh_reachability, R.string.feature_ssh_reachability_desc, onChanged, null);
-        sshOptions[1] = add(context, panel, HOST_COLORS, R.string.feature_host_colors, R.string.feature_host_colors_desc, onChanged, null);
         for (TabBarPopup.Row row : sshOptions) row.setEnabled(isEnabled(context, SSH));
 
         panel.addHeader(context.getString(R.string.feature_group_sessions));
         add(context, panel, SESSION_RESTORE, R.string.feature_session_restore, R.string.feature_session_restore_desc, onChanged, null);
-        String emoji = TabEmojis.getDefault(context);
-        panel.addLinkRow(context.getString(R.string.title_default_tab_emoji),
-            emoji == null ? context.getString(R.string.feature_default_emoji_none)
-                : context.getString(R.string.feature_default_emoji_set, emoji), () -> {
-                panel.dismiss();
-                if (editDefaultEmoji != null) editDefaultEmoji.run();
-            });
 
         panel.addButtons(new TabBarPopup.Button(context.getString(R.string.action_done), TabBarPopup.Button.PRIMARY, panel::dismiss));
         panel.showCentered(true, null);

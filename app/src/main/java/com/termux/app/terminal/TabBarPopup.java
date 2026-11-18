@@ -43,9 +43,9 @@ final class TabBarPopup {
     static final int DOT_RED = 0xFFEF5350;
     static final int DOT_AMBER = 0xFFFFC107;
 
-    static final int GROUP_COLOR = 0xFF1C1C20;
-    static final int DIVIDER_COLOR = 0xFF2E2E34;
-    static final int BORDER_COLOR = 0xFF34343B;
+    static final int GROUP_COLOR = 0xFF101013;
+    static final int DIVIDER_COLOR = 0xFF1E1E23;
+    static final int BORDER_COLOR = 0xFF26262C;
 
     enum Kind { INFO, WARN, ERROR }
 
@@ -406,7 +406,7 @@ final class TabBarPopup {
         shape.setCornerRadius(dp(10));
         box.setBackground(shape);
 
-        TextView iconView = text(icon, 12, ExtraKeysStyle.PANEL_COLOR);
+        TextView iconView = text(icon, 12, ExtraKeysStyle.ON_ACCENT_TEXT_COLOR);
         iconView.setTypeface(null, Typeface.BOLD);
         iconView.setGravity(Gravity.CENTER);
         GradientDrawable circle = new GradientDrawable();
@@ -503,6 +503,33 @@ final class TabBarPopup {
     }
 
     /** Add small centered text at the end, like when the numbers were updated. */
+    /** A grid of tappable cells, like a row of quick-pick emojis. Each tap runs {@code onPick}. */
+    void addGrid(java.util.List<String> items, int columns, java.util.function.Consumer<String> onPick) {
+        endGroup();
+        LinearLayout grid = new LinearLayout(mContext);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        grid.setPadding(0, dp(4), 0, dp(4));
+        LinearLayout row = null;
+        for (int i = 0; i < items.size(); i++) {
+            if (i % columns == 0) {
+                row = new LinearLayout(mContext);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                grid.addView(row, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+            }
+            String item = items.get(i);
+            TextView cell = text(item, 22, ExtraKeysStyle.KEY_TEXT_COLOR);
+            cell.setGravity(Gravity.CENTER);
+            cell.setBackground(pressable(0, dp(8)));
+            cell.setOnClickListener(v -> onPick.accept(item));
+            row.addView(cell, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
+        }
+        // Keep the last row's cells the same size as the others
+        int missing = items.isEmpty() ? 0 : (columns - items.size() % columns) % columns;
+        for (int i = 0; i < missing && row != null; i++)
+            row.addView(new View(mContext), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
+        mList.addView(grid, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+    }
+
     void addFooter(String text) {
         endGroup();
         TextView footer = text(text, 11, ExtraKeysStyle.KEY_HINT_TEXT_COLOR);
@@ -768,7 +795,7 @@ final class TabBarPopup {
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(0));
             window.setLayout(size[0], ViewGroup.LayoutParams.WRAP_CONTENT);
-            window.setDimAmount(0.6f);
+            window.setDimAmount(0.8f);
             if (focusInput != null) window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
         }
         try {
@@ -777,7 +804,18 @@ final class TabBarPopup {
             sShowing.remove(this);
             return;
         }
-        if (focusInput != null) focusInput.requestFocus();
+        if (focusInput != null) {
+            // Asking for the keyboard right away is often ignored while the dialog window is
+            // still being attached, so focus and ask again once it is on screen
+            focusInput.requestFocus();
+            focusInput.postDelayed(() -> {
+                if (!focusInput.isAttachedToWindow()) return;
+                focusInput.requestFocus();
+                android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager)
+                    mContext.getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (imm != null) imm.showSoftInput(focusInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+            }, 150);
+        }
     }
 
     /** Fit the size and position to new content after it was rebuilt while showing. */
