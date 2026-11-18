@@ -294,6 +294,15 @@
     <string name="action_done">Done</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_tools">Tools</string>
+    <string name="action_tools_extra_keys">Extra keys</string>
+    <string name="msg_tools_extra_keys">The row of ESC, CTRL, arrows and your macros</string>
+    <string name="action_termux_settings">Termux settings</string>
+    <string name="msg_termux_settings">Terminal, keyboard, logs and about</string>
+    <string name="action_new_named_session">New named session</string>
+    <string name="action_failsafe_session">Failsafe session</string>
+    <string name="msg_failsafe_desc">Plain Android shell, for when your setup won\'t start</string>
+    <string name="msg_failsafe_shortcut">The Termux icon\'s long-press \"Failsafe\" shortcut also works</string>
+    <string name="action_create">Create</string>
     <string name="action_close">Close</string>
     <string name="feature_group_ai">Claude API</string>
     <string name="feature_ai">Claude helpers</string>

@@ -238,6 +238,10 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
 
         setToggleKeyboardView();
 
+        // The side drawer is retired in favour of the tab bar: no edge swipe can open it, which
+        // also keeps it from clashing with gesture navigation's back swipe
+        getDrawer().setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
+
         registerForContextMenu(mTerminalView);
 
         // Start the {@link TermuxService} and make it run regardless of who is bound to it
@@ -776,6 +780,16 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
 
     public void setExtraKeysView(ExtraKeysView extraKeysView) {
         mExtraKeysView = extraKeysView;
+    }
+
+    @Nullable
+    public TermuxSessionsTabBarController getTabBarController() {
+        return mTermuxSessionsTabBarController;
+    }
+
+    /** Whether the extra keys toolbar is shown. */
+    public boolean isTerminalToolbarShown() {
+        return mPreferences != null && mPreferences.shouldShowTerminalToolbar();
     }
 
     public DrawerLayout getDrawer() {

@@ -33,11 +33,10 @@ public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
             if(mTermuxTerminalViewClient != null)
                 mTermuxTerminalViewClient.onToggleSoftKeyboardRequest();
         } else if ("DRAWER".equals(key)) {
-            DrawerLayout drawerLayout = mTermuxTerminalViewClient.getActivity().getDrawer();
-            if (drawerLayout.isDrawerOpen(Gravity.LEFT))
-                drawerLayout.closeDrawer(Gravity.LEFT);
-            else
-                drawerLayout.openDrawer(Gravity.LEFT);
+            // The side drawer is retired: this key now opens and closes the tab bar's tools sheet
+            com.termux.app.terminal.TermuxSessionsTabBarController tabBar =
+                mTermuxTerminalViewClient.getActivity().getTabBarController();
+            if (tabBar != null) tabBar.toggleToolsSheet();
         } else if ("PASTE".equals(key)) {
             if(mTermuxTerminalSessionClient != null)
                 mTermuxTerminalSessionClient.onPasteTextFromClipboard(null);

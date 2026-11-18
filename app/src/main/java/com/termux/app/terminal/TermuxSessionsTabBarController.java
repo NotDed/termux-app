@@ -119,8 +119,7 @@ public class TermuxSessionsTabBarController {
             if (client != null) client.addNewSession(false, null);
         });
         newSessionButton.setOnLongClickListener(v -> {
-            TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
-            if (client != null) client.addNewSession(true, "Failsafe");
+            showNewSessionMenu(v);
             return true;
         });
 
@@ -183,6 +182,54 @@ public class TermuxSessionsTabBarController {
     }
 
     /** The sheet behind the tools key: VPN, port forwards, snippets and settings. */
+    /** Open or close the tools sheet, for the DRAWER extra key and Ctrl+Alt+arrows that used to open the drawer. */
+    public void toggleToolsSheet() {
+        if (isToolsSheetShowing()) mToolsSheet.dismiss();
+        else showToolsSheet();
+    }
+
+    public boolean isToolsSheetShowing() {
+        return mToolsSheet != null && mToolsSheet.isShowing();
+    }
+
+    /** Long-press + : a named session, or a failsafe one for when the shell setup won't start. */
+    private void showNewSessionMenu(View anchor) {
+        TabBarPopup menu = new TabBarPopup(mActivity, mActivity.getString(R.string.action_new_session));
+        menu.addLinkRow(mActivity.getString(R.string.action_new_named_session), null, () -> {
+            menu.dismiss();
+            showNewNamedSession();
+        });
+        menu.addLinkRow(mActivity.getString(R.string.action_failsafe_session), mActivity.getString(R.string.msg_failsafe_desc), () -> {
+            menu.dismiss();
+            TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
+            if (client != null) client.addNewSession(true, "Failsafe");
+        });
+        menu.addFooter(mActivity.getString(R.string.msg_failsafe_shortcut));
+        menu.show(anchor);
+    }
+
+    private void showNewNamedSession() {
+        TabBarPopup panel = new TabBarPopup(mActivity, mActivity.getString(R.string.title_create_named_session));
+        EditText[] holder = new EditText[1];
+        Runnable create = () -> {
+            String name = holder[0].getText().toString().trim();
+            panel.dismiss();
+            TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
+            if (client == null) return;
+            TerminalSession session = client.addNewSession(false, name.isEmpty() ? null : name, null, null, null);
+            // A name the user chose shows instead of the default tab emoji
+            if (session != null && !name.isEmpty()) {
+                SessionMeta.markRenamed(session, true);
+                update();
+            }
+        };
+        holder[0] = panel.addInput(mActivity.getString(R.string.msg_rename_session_hint), null, false, create);
+        panel.addButtons(
+            new TabBarPopup.Button(mActivity.getString(R.string.action_cancel), TabBarPopup.Button.TEXT, panel::dismiss),
+            new TabBarPopup.Button(mActivity.getString(R.string.action_create), TabBarPopup.Button.PRIMARY, create));
+        panel.showCentered(true, holder[0]);
+    }
+
     private void showToolsSheet() {
         TabBarPopup sheet = new TabBarPopup(mActivity, mActivity.getString(R.string.title_tools));
         mToolsSheet = sheet;
@@ -289,6 +336,16 @@ public class TermuxSessionsTabBarController {
                     showClaudeBellHelp();
                 });
         }
+
+        sheet.addSwitchRow(mActivity.getString(R.string.action_tools_extra_keys), mActivity.getString(R.string.msg_tools_extra_keys),
+            false, mActivity.isTerminalToolbarShown(), checked -> {
+                if (checked != mActivity.isTerminalToolbarShown()) mActivity.toggleTerminalToolbar();
+            });
+
+        sheet.addLinkRow(mActivity.getString(R.string.action_termux_settings), mActivity.getString(R.string.msg_termux_settings), () -> {
+            sheet.dismiss();
+            mActivity.startActivity(new android.content.Intent(mActivity, com.termux.app.activities.SettingsActivity.class));
+        });
 
         sheet.addLinkRow(mActivity.getString(R.string.action_tabbar_settings), mActivity.getString(R.string.msg_tools_settings), () -> {
             sheet.dismiss();
