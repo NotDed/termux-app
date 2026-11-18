@@ -342,6 +342,11 @@ public class TermuxSessionsTabBarController {
                 if (checked != mActivity.isTerminalToolbarShown()) mActivity.toggleTerminalToolbar();
             });
 
+        sheet.addLinkRow(mActivity.getString(R.string.action_edit_extra_keys), mActivity.getString(R.string.msg_edit_extra_keys), () -> {
+            sheet.dismiss();
+            ExtraKeysEditor.show(mActivity);
+        });
+
         sheet.addLinkRow(mActivity.getString(R.string.action_termux_settings), mActivity.getString(R.string.msg_termux_settings), () -> {
             sheet.dismiss();
             mActivity.startActivity(new android.content.Intent(mActivity, com.termux.app.activities.SettingsActivity.class));

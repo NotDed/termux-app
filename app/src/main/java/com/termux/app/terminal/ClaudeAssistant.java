@@ -79,6 +79,8 @@ final class ClaudeAssistant {
         @Nullable String summary;
         @Nullable String cause;
         @Nullable String name;
+        /** A new extra keys layout, as Termux's extra-keys JSON. */
+        @Nullable String layoutJson;
         final List<Suggestion> commands = new ArrayList<>();
     }
 
@@ -178,6 +180,75 @@ final class ClaudeAssistant {
         request(context, PREF_LIGHT_MODEL, system, user, objectSchema(properties), callback);
     }
 
+    private static final String EXTRA_KEYS_REFERENCE =
+        "Termux extra keys are rows of keys shown above the keyboard. Each key is either a key name " +
+        "or a macro. Key names: ESC TAB CTRL ALT SHIFT FN HOME END PGUP PGDN UP DOWN LEFT RIGHT ENTER " +
+        "BKSP DEL INS SPACE KEYBOARD DRAWER PASTE SCROLL F1-F12, or any single character like / or -. " +
+        "A macro is a space-separated sequence of key names and single characters, sent in order: " +
+        "\"CTRL b d\" presses CTRL+b then d; to type text, give one character per token and SPACE for " +
+        "spaces, e.g. \"g i t SPACE s t a t u s ENTER\". CTRL, ALT, SHIFT and FN inside a macro modify the " +
+        "next token. display is an optional short label (1 to 4 characters or an emoji). A key can have a " +
+        "swipe-up popup with its own key or macro and label. Keep rows about the same length, at most 10 keys.";
+
+    /**
+     * Change an extra keys layout as the user describes. The answer's {@code layoutJson} is Termux's
+     * extra-keys JSON for the whole new layout, and {@code summary} says what changed.
+     */
+    static void editExtraKeys(Context context, String currentJson, String request, Callback callback) {
+        String system = "You edit a Termux extra keys layout. " + EXTRA_KEYS_REFERENCE + " Return the " +
+            "whole new layout: rows of keys, each with key or macro filled (the other empty), display, and " +
+            "popup_key / popup_macro / popup_display (all empty when there is no popup). Keep every key the " +
+            "user did not ask to change exactly as it is. summary: one sentence on what you changed.";
+        String user = "Current layout (Termux extra-keys JSON):\n" + currentJson + "\n\nChange: " + request;
+
+        Map<String, Object> keyProperties = new LinkedHashMap<>();
+        for (String field : new String[]{"key", "macro", "display", "popup_key", "popup_macro", "popup_display"})
+            keyProperties.put(field, stringType());
+        Map<String, Object> row = new HashMap<>();
+        row.put("type", "array");
+        row.put("items", objectSchema(keyProperties));
+        Map<String, Object> rows = new HashMap<>();
+        rows.put("type", "array");
+        rows.put("items", row);
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("summary", stringType());
+        properties.put("rows", rows);
+        request(context, PREF_MAIN_MODEL, system, user, objectSchema(properties), callback);
+    }
+
+    /** Turn the structured rows from Claude into Termux's extra-keys JSON. */
+    @Nullable
+    private static String layoutFromRows(JSONArray rows) {
+        try {
+            List<List<ExtraKeysFile.Key>> layout = new ArrayList<>();
+            for (int r = 0; r < rows.length(); r++) {
+                JSONArray row = rows.getJSONArray(r);
+                List<ExtraKeysFile.Key> keys = new ArrayList<>();
+                for (int k = 0; k < row.length(); k++) {
+                    JSONObject item = row.getJSONObject(k);
+                    ExtraKeysFile.Key key = new ExtraKeysFile.Key();
+                    key.key = item.optString("key", "").trim();
+                    key.macro = item.optString("macro", "").trim();
+                    key.display = item.optString("display", "").trim();
+                    if (key.macro.isEmpty() && key.key.isEmpty()) continue;
+                    String popupKey = item.optString("popup_key", "").trim();
+                    String popupMacro = item.optString("popup_macro", "").trim();
+                    if (!popupKey.isEmpty() || !popupMacro.isEmpty()) {
+                        key.popup = new ExtraKeysFile.Key();
+                        key.popup.key = popupKey;
+                        key.popup.macro = popupMacro;
+                        key.popup.display = item.optString("popup_display", "").trim();
+                    }
+                    keys.add(key);
+                }
+                if (!keys.isEmpty()) layout.add(keys);
+            }
+            return layout.isEmpty() ? null : ExtraKeysFile.toJson(layout);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** Check that a key works with a tiny token count, before saving it. */
     static void testKey(String apiKey, Callback callback) {
         EXECUTOR.execute(() -> {
@@ -265,6 +336,11 @@ final class ClaudeAssistant {
             answer.summary = emptyToNull(object.optString("summary", ""));
             answer.cause = emptyToNull(object.optString("cause", ""));
             answer.name = emptyToNull(object.optString("name", "").trim());
+            JSONArray rows = object.optJSONArray("rows");
+            if (rows != null) {
+                answer.layoutJson = layoutFromRows(rows);
+                if (answer.layoutJson == null) answer.error = "Claude's layout could not be read";
+            }
             JSONArray commands = object.optJSONArray("commands");
             for (int i = 0; commands != null && i < commands.length() && i < 3; i++) {
                 JSONObject item = commands.optJSONObject(i);

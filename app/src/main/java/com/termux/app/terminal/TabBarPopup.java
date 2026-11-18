@@ -530,6 +530,28 @@ final class TabBarPopup {
         mList.addView(grid, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
     }
 
+    /** A row of choices where one is selected, like Key / Macro / Text. */
+    void addSegments(String[] labels, int selected, java.util.function.IntConsumer onSelect) {
+        endGroup();
+        LinearLayout bar = new LinearLayout(mContext);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setPadding(0, dp(4), 0, dp(6));
+        for (int i = 0; i < labels.length; i++) {
+            final int index = i;
+            boolean on = i == selected;
+            TextView segment = text(labels[i], 13, on ? ExtraKeysStyle.ON_ACCENT_TEXT_COLOR : ExtraKeysStyle.KEY_TEXT_COLOR);
+            segment.setGravity(Gravity.CENTER);
+            segment.setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
+            segment.setPadding(dp(6), dp(9), dp(6), dp(9));
+            segment.setBackground(pressable(on ? ExtraKeysStyle.ACCENT_COLOR : GROUP_COLOR, dp(8)));
+            segment.setOnClickListener(v -> onSelect.accept(index));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            if (i > 0) params.leftMargin = dp(6);
+            bar.addView(segment, params);
+        }
+        mList.addView(bar, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+    }
+
     void addFooter(String text) {
         endGroup();
         TextView footer = text(text, 11, ExtraKeysStyle.KEY_HINT_TEXT_COLOR);

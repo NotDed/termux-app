@@ -516,14 +516,62 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
     }
 
     private void setTerminalToolbarHeight() {
+        setTerminalToolbarHeight(mProperties.getExtraKeysInfo() == null ? 0 : mProperties.getExtraKeysInfo().getMatrix().length);
+    }
+
+    private void setTerminalToolbarHeight(int rows) {
         final ViewPager terminalToolbarViewPager = getTerminalToolbarViewPager();
         if (terminalToolbarViewPager == null) return;
 
         ViewGroup.LayoutParams layoutParams = terminalToolbarViewPager.getLayoutParams();
-        layoutParams.height = (int) Math.round(mTerminalToolbarDefaultHeight *
-            (mProperties.getExtraKeysInfo() == null ? 0 : mProperties.getExtraKeysInfo().getMatrix().length) *
+        layoutParams.height = (int) Math.round(mTerminalToolbarDefaultHeight * rows *
             mProperties.getTerminalToolbarHeightScaleFactor());
         terminalToolbarViewPager.setLayoutParams(layoutParams);
+    }
+
+    /**
+     * Show a draft extra keys layout on the real extra keys row without saving it, for the extra
+     * keys editor. Returns false if the layout can't be parsed.
+     */
+    public boolean previewExtraKeys(String layoutJson) {
+        try {
+            com.termux.shared.terminal.io.extrakeys.ExtraKeysInfo info = new com.termux.shared.terminal.io.extrakeys.ExtraKeysInfo(
+                layoutJson, getExtraKeysStyle(), com.termux.shared.terminal.io.extrakeys.ExtraKeysConstants.CONTROL_CHARS_ALIASES);
+            if (mExtraKeysView != null) mExtraKeysView.reload(info);
+            setTerminalToolbarHeight(info.getMatrix().length);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Whether a layout parses the way Termux reads it, so it is safe to save. */
+    public boolean isValidExtraKeys(String layoutJson) {
+        try {
+            com.termux.shared.terminal.io.extrakeys.ExtraKeysInfo info = new com.termux.shared.terminal.io.extrakeys.ExtraKeysInfo(
+                layoutJson, getExtraKeysStyle(), com.termux.shared.terminal.io.extrakeys.ExtraKeysConstants.CONTROL_CHARS_ALIASES);
+            return info.getMatrix().length > 0 && info.getMatrix()[0].length > 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String getExtraKeysStyle() {
+        Object style = mProperties == null ? null :
+            mProperties.getInternalPropertyValue(com.termux.shared.settings.properties.TermuxPropertyConstants.KEY_EXTRA_KEYS_STYLE, true);
+        return style instanceof String ? (String) style
+            : com.termux.shared.settings.properties.TermuxPropertyConstants.DEFAULT_IVALUE_EXTRA_KEYS_STYLE;
+    }
+
+    /** Show the saved extra keys again, after a preview. */
+    public void restoreExtraKeys() {
+        if (mExtraKeysView != null && mProperties != null) mExtraKeysView.reload(mProperties.getExtraKeysInfo());
+        setTerminalToolbarHeight();
+    }
+
+    /** Reload termux.properties and restyle, like termux-reload-settings. */
+    public void reloadStyling() {
+        reloadActivityStyling();
     }
 
     public void toggleTerminalToolbar() {
