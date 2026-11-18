@@ -96,18 +96,10 @@ public class TermuxSessionsTabBarController {
         mSnippetsButton = barRoot.findViewById(R.id.snippets_tab_button);
         styleKey(mSnippetsButton);
         mSnippetsButton.setOnClickListener(this::showSnippetsPopup);
-        mSnippetsButton.setOnLongClickListener(v -> {
-            mActivity.showToast(mActivity.getString(R.string.msg_snippets_source), false);
-            return true;
-        });
 
         mSshButton = barRoot.findViewById(R.id.ssh_hosts_tab_button);
         styleKey(mSshButton);
         mSshButton.setOnClickListener(this::showSshHostsPopup);
-        mSshButton.setOnLongClickListener(v -> {
-            mActivity.showToast(mActivity.getString(R.string.msg_ssh_hosts_source), false);
-            return true;
-        });
 
         View newSessionButton = barRoot.findViewById(R.id.new_session_tab_button);
         styleKey(newSessionButton);
@@ -123,7 +115,7 @@ public class TermuxSessionsTabBarController {
 
         View settingsButton = barRoot.findViewById(R.id.settings_tab_button);
         styleKey(settingsButton);
-        settingsButton.setOnClickListener(v -> TabBarFeatures.showDialog(mActivity, this::applyFeatures));
+        settingsButton.setOnClickListener(v -> TabBarFeatures.showDialog(mActivity, this::applyFeatures, this::showDefaultEmojiEditor));
 
         applyFeatures();
     }
@@ -181,13 +173,14 @@ public class TermuxSessionsTabBarController {
             tab.setPadding(padding, 0, padding, 0);
             tab.setSingleLine(true);
             tab.setEllipsize(TextUtils.TruncateAt.END);
-            tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-            tab.setText(getTabTitle(i, session));
+            String emoji = getTabEmoji(session);
+            tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, emoji != null ? 16 : 13);
+            tab.setText(emoji != null ? emoji : getTabTitle(i, session));
 
             boolean isCurrent = session == current;
             SessionMeta meta = SessionMeta.get(session);
             int hostColor = hostColors && meta != null ? getHostColor(meta.host) : 0;
-            tab.setBackground(getTabBackground(isCurrent, hostColor));
+            tab.setBackground(getTabBackground(isCurrent, hostColor, SessionAttention.has(session)));
             tab.setTypeface(null, isCurrent ? Typeface.BOLD : Typeface.NORMAL);
 
             boolean running = session.isRunning();
@@ -221,23 +214,89 @@ public class TermuxSessionsTabBarController {
     }
 
     /** A keycap, plus a colored bar along the bottom for SSH tabs when host colors are on. */
-    private Drawable getTabBackground(boolean isCurrent, int hostColor) {
+    /**
+     * A keycap, plus a colored bar along the bottom for SSH tabs when host colors are on, and a
+     * red dot in the top corner when the session needs attention.
+     */
+    private Drawable getTabBackground(boolean isCurrent, int hostColor, boolean attention) {
         int fill = isCurrent ? ExtraKeysStyle.KEY_PRESSED_COLOR : ExtraKeysStyle.KEY_COLOR;
         int stroke = isCurrent ? (hostColor != 0 ? hostColor : ExtraKeysStyle.ACCENT_COLOR) : 0;
         Drawable key = ExtraKeysStyle.keyBackground(mActivity, fill, stroke);
-        if (hostColor == 0 || Build.VERSION.SDK_INT < 23) return key;
+        if ((hostColor == 0 && !attention) || Build.VERSION.SDK_INT < 23) return key;
 
-        GradientDrawable bar = new GradientDrawable();
-        bar.setColor(hostColor);
-        bar.setCornerRadius(ExtraKeysStyle.dp(mActivity, 1.5f));
+        java.util.List<Drawable> parts = new java.util.ArrayList<>();
+        parts.add(key);
+        int barIndex = -1, dotIndex = -1;
 
-        LayerDrawable layers = new LayerDrawable(new Drawable[]{key, bar});
-        int side = ExtraKeysStyle.insetHorizontalPx(mActivity) + Math.round(ExtraKeysStyle.dp(mActivity, 6));
-        int bottom = ExtraKeysStyle.insetVerticalPx(mActivity) + Math.round(ExtraKeysStyle.dp(mActivity, 2));
-        layers.setLayerGravity(1, Gravity.BOTTOM | Gravity.FILL_HORIZONTAL);
-        layers.setLayerHeight(1, Math.round(ExtraKeysStyle.dp(mActivity, 3)));
-        layers.setLayerInset(1, side, 0, side, bottom);
+        if (hostColor != 0) {
+            GradientDrawable bar = new GradientDrawable();
+            bar.setColor(hostColor);
+            bar.setCornerRadius(ExtraKeysStyle.dp(mActivity, 1.5f));
+            barIndex = parts.size();
+            parts.add(bar);
+        }
+        if (attention) {
+            GradientDrawable dot = new GradientDrawable();
+            dot.setShape(GradientDrawable.OVAL);
+            dot.setColor(TabBarPopup.DOT_RED);
+            dotIndex = parts.size();
+            parts.add(dot);
+        }
+
+        LayerDrawable layers = new LayerDrawable(parts.toArray(new Drawable[0]));
+        if (barIndex >= 0) {
+            int side = ExtraKeysStyle.insetHorizontalPx(mActivity) + Math.round(ExtraKeysStyle.dp(mActivity, 6));
+            int bottom = ExtraKeysStyle.insetVerticalPx(mActivity) + Math.round(ExtraKeysStyle.dp(mActivity, 2));
+            layers.setLayerGravity(barIndex, Gravity.BOTTOM | Gravity.FILL_HORIZONTAL);
+            layers.setLayerHeight(barIndex, Math.round(ExtraKeysStyle.dp(mActivity, 3)));
+            layers.setLayerInset(barIndex, side, 0, side, bottom);
+        }
+        if (dotIndex >= 0) {
+            int size = Math.round(ExtraKeysStyle.dp(mActivity, 7));
+            int end = ExtraKeysStyle.insetHorizontalPx(mActivity) + Math.round(ExtraKeysStyle.dp(mActivity, 3));
+            int top = ExtraKeysStyle.insetVerticalPx(mActivity) + Math.round(ExtraKeysStyle.dp(mActivity, 3));
+            layers.setLayerGravity(dotIndex, Gravity.TOP | Gravity.END);
+            layers.setLayerSize(dotIndex, size, size);
+            layers.setLayerInset(dotIndex, 0, top, end, 0);
+        }
         return layers;
+    }
+
+    /**
+     * The emoji to show as the whole tab label, or {@code null} for the usual title. A name the
+     * user gave the tab wins, then the SSH host's emoji, then the default emoji for local tabs.
+     */
+    private String getTabEmoji(TerminalSession session) {
+        if (SessionMeta.isRenamed(session)) return null;
+        SessionMeta meta = SessionMeta.get(session);
+        if (meta != null) return TabEmojis.getHost(mActivity, meta.host);
+        return TabEmojis.getDefault(mActivity);
+    }
+
+    /** A centered panel to set or clear an emoji. {@code save} gets the new value, or null to clear. */
+    private void showEmojiEditor(String title, String current, java.util.function.Consumer<String> save) {
+        TabBarPopup panel = new TabBarPopup(mActivity, title);
+        EditText[] holder = new EditText[1];
+        Runnable apply = () -> {
+            save.accept(holder[0].getText().toString());
+            panel.dismiss();
+            update();
+        };
+        holder[0] = panel.addInput(mActivity.getString(R.string.msg_emoji_hint), current, false, apply);
+        panel.addButtons(
+            new TabBarPopup.Button(mActivity.getString(R.string.action_clear), TabBarPopup.Button.TEXT, () -> {
+                save.accept(null);
+                panel.dismiss();
+                update();
+            }),
+            new TabBarPopup.Button(mActivity.getString(R.string.action_cancel), TabBarPopup.Button.TEXT, panel::dismiss),
+            new TabBarPopup.Button(mActivity.getString(R.string.action_save), TabBarPopup.Button.PRIMARY, apply));
+        panel.showCentered(true, holder[0]);
+    }
+
+    private void showDefaultEmojiEditor() {
+        showEmojiEditor(mActivity.getString(R.string.title_default_tab_emoji), TabEmojis.getDefault(mActivity),
+            emoji -> TabEmojis.setDefault(mActivity, emoji));
     }
 
     private static String getTabTitle(int index, TerminalSession session) {
@@ -269,8 +328,14 @@ public class TermuxSessionsTabBarController {
 
         boolean probe = TabBarFeatures.isEnabled(mActivity, TabBarFeatures.SSH_REACHABILITY);
         for (SshConfigHosts.HostEntry host : hosts) {
-            TabBarPopup.Row row = popup.addRow(host.alias, host.describe(), probe, "tmux",
-                () -> openSsh(popup, host, false), null,
+            String emoji = TabEmojis.getHost(mActivity, host.alias);
+            TabBarPopup.Row row = popup.addRow((emoji != null ? emoji + "  " : "") + host.alias, host.describe(), probe, "tmux",
+                () -> openSsh(popup, host, false),
+                () -> {
+                    popup.dismiss();
+                    showEmojiEditor(mActivity.getString(R.string.title_host_emoji, host.alias),
+                        TabEmojis.getHost(mActivity, host.alias), value -> TabEmojis.setHost(mActivity, host.alias, value));
+                },
                 () -> openSsh(popup, host, true));
             if (probe) {
                 mProbeExecutor.execute(() -> {
@@ -407,6 +472,7 @@ public class TermuxSessionsTabBarController {
         EditText[] holder = new EditText[1];
         Runnable apply = () -> {
             session.mSessionName = holder[0].getText().toString().trim();
+            SessionMeta.markRenamed(session, !session.mSessionName.isEmpty());
             panel.dismiss();
             TermuxTerminalSessionClient client = mActivity.getTermuxTerminalSessionClient();
             if (client != null) client.termuxSessionListNotifyUpdated();

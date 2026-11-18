@@ -68,7 +68,7 @@ public class VpnToggleController {
         mButton = button;
         mButton.setOnClickListener(v -> onClick());
         mButton.setOnLongClickListener(v -> {
-            mActivity.showToast(getStatusText(), false);
+            showMessage(TabBarPopup.Kind.INFO, getStatusText());
             return true;
         });
         applyState(State.OFF);
@@ -85,13 +85,18 @@ public class VpnToggleController {
         mHandler.removeCallbacks(mPollRunnable);
     }
 
+    /** A small panel above the key, in place of a toast. */
+    private void showMessage(TabBarPopup.Kind kind, String message) {
+        TabBarPopup popup = new TabBarPopup(mActivity, mActivity.getString(R.string.action_vpn));
+        popup.addMessage(kind, message, null, null);
+        popup.show(mButton);
+    }
+
     private void onClick() {
-        if (mCommandRunning) {
-            mActivity.showToast(mActivity.getString(R.string.msg_vpn_busy), false);
-            return;
-        }
+        // While a command runs the key is already amber, so just ignore the tap
+        if (mCommandRunning) return;
         if (!new File(SCRIPT_PATH).isFile()) {
-            mActivity.showToast(mActivity.getString(R.string.msg_vpn_script_missing), true);
+            showMessage(TabBarPopup.Kind.ERROR, mActivity.getString(R.string.msg_vpn_script_missing));
             return;
         }
         if (mState == State.OFF) {
@@ -123,12 +128,9 @@ public class VpnToggleController {
             then.run();
             return;
         }
-        if (mCommandRunning) {
-            mActivity.showToast(mActivity.getString(R.string.msg_vpn_busy), false);
-            return;
-        }
+        if (mCommandRunning) return;
         if (!new File(SCRIPT_PATH).isFile()) {
-            mActivity.showToast(mActivity.getString(R.string.msg_vpn_script_missing), true);
+            showMessage(TabBarPopup.Kind.ERROR, mActivity.getString(R.string.msg_vpn_script_missing));
             return;
         }
         mOnConnected = then;
@@ -220,11 +222,8 @@ public class VpnToggleController {
                     applyState(State.ON);
                     onConnected.run();
                 }
-                if (code == 0) {
-                    mActivity.showToast(output.isEmpty() ? getStatusText() : lastLine(output), false);
-                } else {
-                    showFailure(output);
-                }
+                // Success needs no message, the key color shows it
+                if (code != 0) showFailure(output);
                 refreshState();
             });
         });

@@ -14,6 +14,8 @@ public final class SessionMeta {
     public final boolean tmux;
 
     private static final Map<TerminalSession, SessionMeta> META = new WeakHashMap<>();
+    /** Sessions the user named themselves; their name is shown instead of an emoji. */
+    private static final Map<TerminalSession, Boolean> RENAMED = new WeakHashMap<>();
 
     private SessionMeta(String host, boolean tmux) {
         this.host = host;
@@ -27,6 +29,16 @@ public final class SessionMeta {
     @Nullable
     public static SessionMeta get(TerminalSession session) {
         return session == null ? null : META.get(session);
+    }
+
+    public static void markRenamed(TerminalSession session, boolean renamed) {
+        if (session == null) return;
+        if (renamed) RENAMED.put(session, Boolean.TRUE);
+        else RENAMED.remove(session);
+    }
+
+    public static boolean isRenamed(TerminalSession session) {
+        return session != null && RENAMED.containsKey(session);
     }
 
 }

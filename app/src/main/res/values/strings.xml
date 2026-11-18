@@ -295,6 +295,13 @@
     <string name="feature_session_restore_desc">Offer to reopen the tabs from last time</string>
     <string name="action_done">Done</string>
     <string name="action_cancel">Cancel</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_save">Save</string>
+    <string name="msg_emoji_hint">Type or paste an emoji</string>
+    <string name="title_default_tab_emoji">Default tab emoji</string>
+    <string name="title_host_emoji">Emoji for %1$s</string>
+    <string name="feature_default_emoji_none">None · new tabs show their title</string>
+    <string name="feature_default_emoji_set">%1$s · new tabs show only this, unless renamed</string>
     <string name="action_back">Back</string>
     <string name="action_ok">OK</string>
     <string name="action_reconnect">Reconnect</string>
@@ -302,7 +309,7 @@
     <string name="msg_rename_session_hint">Session name</string>
     <string name="msg_snippets_hint">Tap to type · ▶ to run</string>
     <string name="msg_forwards_hint">Only key-based logins work</string>
-    <string name="msg_ssh_hint">Tap to open · tmux attaches to session \"main\"</string>
+    <string name="msg_ssh_hint">Tap to open · tmux attaches to session \"main\" · hold to set an emoji</string>
     <string name="action_run">▶</string>
     <string name="msg_vpn_password_hint">Password</string>
     <string name="msg_vpn_password_desc">Sent only to ~/connect-vpn-termux.sh, never saved.</string>

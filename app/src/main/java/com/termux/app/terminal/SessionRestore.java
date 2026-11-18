@@ -31,6 +31,8 @@ public final class SessionRestore {
 
     static final class Entry {
         String name;
+        /** The user named this tab themselves, so it shows the name rather than an emoji. */
+        boolean renamed;
         String cwd;
         String host;
         boolean tmux;
@@ -55,6 +57,7 @@ public final class SessionRestore {
                 if (session == null || !session.isRunning()) continue;
                 JSONObject object = new JSONObject();
                 if (!TextUtils.isEmpty(session.mSessionName)) object.put("name", session.mSessionName);
+                if (SessionMeta.isRenamed(session)) object.put("renamed", true);
                 SessionMeta meta = SessionMeta.get(session);
                 if (meta != null) {
                     object.put("host", meta.host);
@@ -78,6 +81,7 @@ public final class SessionRestore {
                 JSONObject object = array.getJSONObject(i);
                 Entry entry = new Entry();
                 entry.name = object.optString("name", null);
+                entry.renamed = object.optBoolean("renamed", false);
                 entry.cwd = object.optString("cwd", null);
                 entry.host = object.optString("host", null);
                 entry.tmux = object.optBoolean("tmux", false);
@@ -145,9 +149,14 @@ public final class SessionRestore {
             TerminalSession session;
             if (e.host != null) {
                 session = client.addNewSshSession(e.host, e.tmux);
+                if (session != null && e.renamed && !TextUtils.isEmpty(e.name)) {
+                    session.mSessionName = e.name;
+                    SessionMeta.markRenamed(session, true);
+                }
             } else {
                 String cwd = e.cwd != null && new File(e.cwd).isDirectory() ? e.cwd : TermuxConstants.TERMUX_HOME_DIR_PATH;
                 session = client.addNewSession(false, e.name, null, null, cwd);
+                SessionMeta.markRenamed(session, e.renamed && !TextUtils.isEmpty(e.name));
             }
             if (first == null) first = session;
         }

@@ -30,7 +30,7 @@ public final class TabBarFeatures {
     }
 
     /** Show the features panel. {@code onChanged} runs after every change. */
-    public static void showDialog(Context context, Runnable onChanged) {
+    public static void showDialog(Context context, Runnable onChanged, Runnable editDefaultEmoji) {
         TabBarPopup panel = new TabBarPopup(context, context.getString(R.string.title_tabbar_features));
 
         panel.addHeader(context.getString(R.string.feature_group_keys));
@@ -50,6 +50,13 @@ public final class TabBarFeatures {
 
         panel.addHeader(context.getString(R.string.feature_group_sessions));
         add(context, panel, SESSION_RESTORE, R.string.feature_session_restore, R.string.feature_session_restore_desc, onChanged, null);
+        String emoji = TabEmojis.getDefault(context);
+        panel.addLinkRow(context.getString(R.string.title_default_tab_emoji),
+            emoji == null ? context.getString(R.string.feature_default_emoji_none)
+                : context.getString(R.string.feature_default_emoji_set, emoji), () -> {
+                panel.dismiss();
+                if (editDefaultEmoji != null) editDefaultEmoji.run();
+            });
 
         panel.addButtons(new TabBarPopup.Button(context.getString(R.string.action_done), TabBarPopup.Button.PRIMARY, panel::dismiss));
         panel.showCentered(true, null);

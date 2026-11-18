@@ -87,16 +87,14 @@ public class ForwardsController {
     private final Map<String, TabBarPopup.Row> mRows = new HashMap<>();
     /** Forwards whose last start failed, so the next refresh keeps showing the error. */
     private final java.util.Set<String> mFailed = new java.util.HashSet<>();
+    /** Failures that happened while the popup was closed, shown on the row when it opens again. */
+    private final java.util.Map<String, String> mPendingFailures = new java.util.HashMap<>();
 
     public ForwardsController(TermuxActivity activity, TextView button, Runnable openEditor) {
         mActivity = activity;
         mButton = button;
         mOpenEditor = openEditor;
         mButton.setOnClickListener(v -> showPopup());
-        mButton.setOnLongClickListener(v -> {
-            mActivity.showToast(mActivity.getString(R.string.msg_forwards_source), false);
-            return true;
-        });
         applyCount(0);
     }
 
@@ -162,7 +160,7 @@ public class ForwardsController {
             mButton.setBackground(ExtraKeysStyle.keyBackground(mActivity, ExtraKeysStyle.ACCENT_COLOR, 0));
         } else {
             mButton.setText("⇄");
-            mButton.setTextColor(ExtraKeysStyle.KEY_TEXT_COLOR);
+            mButton.setTextColor(mPendingFailures.isEmpty() ? ExtraKeysStyle.KEY_TEXT_COLOR : TabBarPopup.DOT_RED);
             mButton.setBackground(ExtraKeysStyle.keyBackground(mActivity, ExtraKeysStyle.KEY_COLOR, 0));
         }
     }
@@ -208,7 +206,14 @@ public class ForwardsController {
             for (Forward f : forwards) {
                 TabBarPopup.Row row = mPopup.addSwitchRow(f.name, describe(f), true, false, checked -> toggle(f));
                 mRows.put(f.name, row);
+                String failure = mPendingFailures.get(f.name);
+                if (failure != null) {
+                    mFailed.add(f.name);
+                    row.setDotColor(TabBarPopup.DOT_RED);
+                    row.setSubtitle(failure, TabBarPopup.DOT_RED);
+                }
             }
+            mPendingFailures.clear();
             mPopup.addFooter(mActivity.getString(R.string.msg_forwards_hint));
         }
 
@@ -227,6 +232,7 @@ public class ForwardsController {
 
             mHandler.post(() -> {
                 mFailed.remove(forward.name);
+                mPendingFailures.remove(forward.name);
                 if (row != null) {
                     row.setDotColor(TabBarPopup.DOT_AMBER);
                     row.setSubtitle(describe(forward) + " · starting…");
@@ -243,7 +249,8 @@ public class ForwardsController {
                         row.setSubtitle(message, TabBarPopup.DOT_RED);
                         mPopup.relayout();
                     } else {
-                        mActivity.showToast(message, true);
+                        // No toasts: keep it for the next time the popup opens and mark the key
+                        mPendingFailures.put(forward.name, message);
                     }
                 });
             }

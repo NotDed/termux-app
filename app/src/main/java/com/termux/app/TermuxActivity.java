@@ -28,7 +28,6 @@ import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.RelativeLayout;
-import android.widget.Toast;
 
 import com.termux.R;
 import com.termux.app.terminal.TermuxActivityRootView;
@@ -140,10 +139,6 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
      */
     private final BroadcastReceiver mTermuxActivityBroadcastReceiver = new TermuxActivityBroadcastReceiver();
 
-    /**
-     * The last toast shown, used cancel current toast before showing new in {@link #showToast(String, boolean)}.
-     */
-    Toast mLastToast;
 
     /**
      * If between onResume() and onStop(). Note that only one session is in the foreground of the terminal view at the
@@ -294,6 +289,10 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
 
         if (mTermuxTerminalSessionClient != null)
             mTermuxTerminalSessionClient.onResume();
+
+        // Back on screen: the session shown no longer needs attention
+        com.termux.app.terminal.SessionAttention.clear(getCurrentSession());
+        termuxSessionListNotifyUpdated();
 
         if (mTermuxTerminalViewClient != null)
             mTermuxTerminalViewClient.onResume();
@@ -528,7 +527,6 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
         if (terminalToolbarViewPager == null) return;
 
         final boolean showNow = mPreferences.toogleShowTerminalToolbar();
-        Logger.showToast(this, (showNow ? getString(R.string.msg_enabling_terminal_toolbar) : getString(R.string.msg_disabling_terminal_toolbar)), true);
         terminalToolbarViewPager.setVisibility(showNow ? View.VISIBLE : View.GONE);
         if (showNow && isTerminalToolbarTextInputViewSelected()) {
             // Focus the text input view if just revealed.
@@ -601,13 +599,6 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
     }
 
     /** Show a toast and dismiss the last one if still visible. */
-    public void showToast(String text, boolean longDuration) {
-        if (text == null || text.isEmpty()) return;
-        if (mLastToast != null) mLastToast.cancel();
-        mLastToast = Toast.makeText(TermuxActivity.this, text, longDuration ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT);
-        mLastToast.setGravity(Gravity.TOP, 0, 0);
-        mLastToast.show();
-    }
 
 
 
@@ -712,7 +703,6 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
     private void onResetTerminalSession(TerminalSession session) {
         if (session != null) {
             session.reset();
-            showToast(getResources().getString(R.string.msg_terminal_reset), true);
 
             if (mTermuxTerminalSessionClient != null)
                 mTermuxTerminalSessionClient.onResetTerminalSession();

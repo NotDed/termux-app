@@ -119,13 +119,6 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
     public void onTitleChanged(TerminalSession updatedSession) {
         if (!mActivity.isVisible()) return;
 
-        if (updatedSession != mActivity.getCurrentSession()) {
-            // Only show toast for other sessions than the current one, since the user
-            // probably consciously caused the title change to change in the current session
-            // and don't want an annoying toast for that.
-            mActivity.showToast(toToastTitle(updatedSession), true);
-        }
-
         termuxSessionListNotifyUpdated();
     }
 
@@ -150,13 +143,6 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
             isPluginExecutionCommandWithPendingResult = termuxSession.getExecutionCommand().isPluginExecutionCommandWithPendingResult();
             if (isPluginExecutionCommandWithPendingResult)
                 Logger.logVerbose(LOG_TAG, "The \"" + finishedSession.mSessionName + "\" session will be force finished automatically since result in pending.");
-        }
-
-        if (mActivity.isVisible() && finishedSession != mActivity.getCurrentSession()) {
-            // Show toast for non-current sessions that exit.
-            // Verify that session was not removed before we got told about it finishing:
-            if (index >= 0)
-                mActivity.showToast(toToastTitle(finishedSession) + " - exited", true);
         }
 
         if (mActivity.getPackageManager().hasSystemFeature(PackageManager.FEATURE_LEANBACK)) {
@@ -192,6 +178,13 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
 
     @Override
     public void onBell(TerminalSession session) {
+        // A bell from a tab that is not being looked at means it wants attention, like a
+        // prompt waiting for input: show a red dot on its tab until it is shown
+        if (session != mActivity.getCurrentSession() || !mActivity.isVisible()) {
+            SessionAttention.mark(session);
+            termuxSessionListNotifyUpdated();
+        }
+
         if (!mActivity.isVisible()) return;
 
         switch (mActivity.getProperties().getBellBehaviour()) {
@@ -270,6 +263,7 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
     /** Try switching to session. */
     public void setCurrentSession(TerminalSession session) {
         if (session == null) return;
+        SessionAttention.clear(session);
 
         if (mActivity.getTerminalView().attachSession(session)) {
             // notify about switched session if not already displaying the session
@@ -286,12 +280,7 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
     }
 
     void notifyOfSessionChange() {
-        if (!mActivity.isVisible()) return;
-
-        if (!mActivity.getProperties().areTerminalSessionChangeToastsDisabled()) {
-            TerminalSession session = mActivity.getCurrentSession();
-            mActivity.showToast(toToastTitle(session), false);
-        }
+        // Switching sessions no longer shows a toast, the tab bar shows the current session
     }
 
     public void switchToSession(boolean forward) {
@@ -327,6 +316,7 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
 
         TextInputDialogUtils.textInput(mActivity, R.string.title_rename_session, sessionToRename.mSessionName, R.string.action_rename_session_confirm, text -> {
             sessionToRename.mSessionName = text;
+            SessionMeta.markRenamed(sessionToRename, text != null && !text.trim().isEmpty());
             termuxSessionListNotifyUpdated();
         }, -1, null, -1, null, null);
     }
@@ -486,24 +476,6 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
     }
 
 
-    String toToastTitle(TerminalSession session) {
-        TermuxService service = mActivity.getTermuxService();
-        if (service == null) return null;
-
-        final int indexOfSession = service.getIndexOfSession(session);
-        if (indexOfSession < 0) return null;
-        StringBuilder toastTitle = new StringBuilder("[" + (indexOfSession + 1) + "]");
-        if (!TextUtils.isEmpty(session.mSessionName)) {
-            toastTitle.append(" ").append(session.mSessionName);
-        }
-        String title = session.getTitle();
-        if (!TextUtils.isEmpty(title)) {
-            // Space to "[${NR}] or newline after session name:
-            toastTitle.append(session.mSessionName == null ? " " : "\n");
-            toastTitle.append(title);
-        }
-        return toastTitle.toString();
-    }
 
 
     public void checkForFontAndColors() {
