@@ -200,6 +200,10 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
 
         setContentView(R.layout.activity_termux);
 
+        // Diagnostics for the keyboard coming back after being closed: log every focus move
+        getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener((oldFocus, newFocus) ->
+            android.util.Log.w("TermuxKeyboard", "focus " + describeView(oldFocus) + " -> " + describeView(newFocus), new Throwable("caller")));
+
         // Load termux shared preferences
         // This will also fail if TermuxConstants.TERMUX_PACKAGE_NAME does not equal applicationId
         mPreferences = TermuxAppSharedPreferences.build(this, true);
@@ -831,6 +835,17 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
 
     public void setExtraKeysView(ExtraKeysView extraKeysView) {
         mExtraKeysView = extraKeysView;
+    }
+
+    private String describeView(View view) {
+        if (view == null) return "null";
+        String id;
+        try {
+            id = view.getId() == View.NO_ID ? "no-id" : getResources().getResourceEntryName(view.getId());
+        } catch (Exception e) {
+            id = "?";
+        }
+        return view.getClass().getSimpleName() + "#" + id;
     }
 
     @Override
