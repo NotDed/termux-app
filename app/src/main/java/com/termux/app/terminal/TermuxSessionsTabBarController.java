@@ -691,6 +691,13 @@ public class TermuxSessionsTabBarController {
                 popup.dismiss();
                 ClaudeAiPanels.explain(mActivity, session);
             });
+            int saved = AiHistory.list(mActivity, session).size();
+            if (saved > 0) {
+                popup.addLinkRow(mActivity.getString(R.string.action_ai_history, saved), mActivity.getString(R.string.msg_ai_history_desc), () -> {
+                    popup.dismiss();
+                    ClaudeAiPanels.showHistory(mActivity, session, this::update);
+                });
+            }
             if (!SessionMeta.isRenamed(session)) {
                 popup.addLinkRow(mActivity.getString(R.string.action_ai_name), mActivity.getString(R.string.msg_ai_name_desc), () -> {
                     popup.dismiss();

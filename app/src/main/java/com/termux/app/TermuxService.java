@@ -108,6 +108,7 @@ public final class TermuxService extends Service implements TermuxTask.TermuxTas
             // Termux is in the background: remember that this session wants attention, so its
             // tab shows a red dot when the user comes back
             com.termux.app.terminal.SessionAttention.mark(session);
+            com.termux.app.terminal.AttentionNotifier.notify(TermuxService.this, session);
         }
     };
 

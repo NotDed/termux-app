@@ -35,8 +35,11 @@ final class ClaudeAiPanels {
         withKey(activity, () -> {
             TabBarPopup panel = loading(activity, activity.getString(R.string.title_ai_explain),
                 activity.getString(R.string.msg_ai_sending_lines, ClaudeAssistant.TRANSCRIPT_LINES));
-            ClaudeAssistant.explain(activity, describeWhere(session), transcriptOf(session),
-                answer -> showAnswer(activity, panel, answer, session));
+            ClaudeAssistant.explain(activity, describeWhere(session), transcriptOf(session), answer -> {
+                // Saved even if the panel was closed while waiting
+                boolean saved = record(activity, session, AiHistory.KIND_EXPLAIN, activity.getString(R.string.title_ai_explain), answer);
+                showAnswer(activity, panel, answer, session, saved);
+            });
         });
     }
 
@@ -54,8 +57,11 @@ final class ClaudeAiPanels {
                 panel.clearRows();
                 panel.addMessage(TabBarPopup.Kind.INFO, activity.getString(R.string.msg_ai_asking), null, null);
                 panel.relayout();
-                ClaudeAssistant.command(activity, where, ClaudeAssistant.mask(request),
-                    answer -> showAnswer(activity, panel, answer, session));
+                ClaudeAssistant.command(activity, where, ClaudeAssistant.mask(request), answer -> {
+                    boolean saved = record(activity, session, AiHistory.KIND_COMMAND,
+                        activity.getString(R.string.title_ai_history_ask, request.length() > 40 ? request.substring(0, 40) + "…" : request), answer);
+                    showAnswer(activity, panel, answer, session, saved);
+                });
             };
             input[0] = panel.addInput(activity.getString(R.string.msg_ai_command_hint), null, false, ask);
             panel.addButtons(
@@ -70,15 +76,19 @@ final class ClaudeAiPanels {
     /**
      * Explain why something run in the background failed.
      *
+     * @param title A short name for the history, e.g. "VPN failure".
      * @param what What was run, in plain words, e.g. "ssh -N -L 8080:localhost:8080 ws1".
      * @param log The end of its log.
      */
-    static void diagnose(TermuxActivity activity, String what, String log) {
+    static void diagnose(TermuxActivity activity, String title, String what, String log) {
         withKey(activity, () -> {
             TabBarPopup panel = loading(activity, activity.getString(R.string.title_ai_diagnose),
                 activity.getString(R.string.msg_ai_sending_log));
-            ClaudeAssistant.diagnose(activity, what, ClaudeAssistant.mask(ClaudeAssistant.tail(log, 40)),
-                answer -> showAnswer(activity, panel, answer, activity.getCurrentSession()));
+            TerminalSession session = activity.getCurrentSession();
+            ClaudeAssistant.diagnose(activity, what, ClaudeAssistant.mask(ClaudeAssistant.tail(log, 40)), answer -> {
+                boolean saved = record(activity, session, AiHistory.KIND_DIAGNOSE, title, answer);
+                showAnswer(activity, panel, answer, session, saved);
+            });
         });
     }
 
@@ -177,8 +187,62 @@ final class ClaudeAiPanels {
     }
 
     /** Fill a panel with Claude's answer: summary, cause, and each command with a "Type it" button. */
+    /** Keep a successful answer in the tab's AI history. Returns whether it was saved. */
+    private static boolean record(TermuxActivity activity, @Nullable TerminalSession session, String kind, String title,
+                                  ClaudeAssistant.Answer answer) {
+        if (session == null || answer.error != null) return false;
+        AiHistory.add(activity, session, kind, title, answer);
+        return true;
+    }
+
+    // ---- History ----
+
+    /** The tab's saved answers, newest first; tap one to read it again. */
+    static void showHistory(TermuxActivity activity, TerminalSession session, Runnable onChanged) {
+        java.util.List<AiHistory.Entry> entries = AiHistory.list(activity, session);
+        TabBarPopup panel = new TabBarPopup(activity, activity.getString(R.string.title_ai_history));
+        if (entries.isEmpty()) {
+            panel.addMessage(TabBarPopup.Kind.INFO, activity.getString(R.string.msg_ai_history_empty), null, null);
+        }
+        java.text.DateFormat time = android.text.format.DateFormat.getTimeFormat(activity);
+        java.text.SimpleDateFormat day = new java.text.SimpleDateFormat("EEE d MMM", java.util.Locale.getDefault());
+        long startOfToday = startOfToday();
+        for (AiHistory.Entry entry : entries) {
+            java.util.Date date = new java.util.Date(entry.time);
+            String when = entry.time >= startOfToday ? time.format(date) : day.format(date) + " " + time.format(date);
+            panel.addLinkRow(entry.title + " · " + when,
+                entry.answer.summary != null ? entry.answer.summary : entry.answer.cause, () -> {
+                    panel.dismiss();
+                    TabBarPopup answerPanel = new TabBarPopup(activity, entry.title);
+                    answerPanel.showCentered(true, null);
+                    showAnswer(activity, answerPanel, entry.answer, session, false);
+                });
+        }
+        if (!entries.isEmpty()) {
+            panel.addButtons(
+                new TabBarPopup.Button(activity.getString(R.string.action_ai_history_clear), TabBarPopup.Button.DANGER, () -> {
+                    AiHistory.clear(activity, session);
+                    panel.dismiss();
+                    onChanged.run();
+                }),
+                new TabBarPopup.Button(activity.getString(R.string.action_close), TabBarPopup.Button.TEXT, panel::dismiss));
+        } else {
+            panel.addButtons(new TabBarPopup.Button(activity.getString(R.string.action_close), TabBarPopup.Button.TEXT, panel::dismiss));
+        }
+        panel.showCentered(true, null);
+    }
+
+    private static long startOfToday() {
+        java.util.Calendar calendar = java.util.Calendar.getInstance();
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0);
+        calendar.set(java.util.Calendar.MINUTE, 0);
+        calendar.set(java.util.Calendar.SECOND, 0);
+        calendar.set(java.util.Calendar.MILLISECOND, 0);
+        return calendar.getTimeInMillis();
+    }
+
     private static void showAnswer(TermuxActivity activity, TabBarPopup panel, ClaudeAssistant.Answer answer,
-                                   @Nullable TerminalSession target) {
+                                   @Nullable TerminalSession target, boolean savedNote) {
         if (!panel.isShowing()) return; // Closed while waiting
         if (answer.error != null) {
             showError(activity, panel, answer.error);
@@ -206,6 +270,7 @@ final class ClaudeAiPanels {
                     panel.dismiss();
                 }));
         }
+        if (savedNote) panel.addFooter(activity.getString(R.string.msg_ai_history_saved));
         panel.addButtons(new TabBarPopup.Button(activity.getString(R.string.action_close), TabBarPopup.Button.TEXT, panel::dismiss));
         panel.relayout();
     }

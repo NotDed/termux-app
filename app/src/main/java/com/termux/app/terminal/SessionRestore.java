@@ -33,6 +33,8 @@ public final class SessionRestore {
         String name;
         /** The user named this tab themselves, so it shows the name rather than an emoji. */
         boolean renamed;
+        /** The tab's AI history id, so its saved answers come back with it. */
+        String ai;
         String cwd;
         String host;
         boolean tmux;
@@ -51,6 +53,7 @@ public final class SessionRestore {
     public static void save(Context context, List<TermuxSession> sessions) {
         if (!sReadyToSave || sessions == null) return;
         JSONArray array = new JSONArray();
+        List<String> keepAi = new ArrayList<>();
         try {
             for (TermuxSession termuxSession : sessions) {
                 TerminalSession session = termuxSession == null ? null : termuxSession.getTerminalSession();
@@ -58,6 +61,11 @@ public final class SessionRestore {
                 JSONObject object = new JSONObject();
                 if (!TextUtils.isEmpty(session.mSessionName)) object.put("name", session.mSessionName);
                 if (SessionMeta.isRenamed(session)) object.put("renamed", true);
+                String aiId = AiHistory.existingIdOf(session);
+                if (aiId != null) {
+                    object.put("ai", aiId);
+                    keepAi.add(aiId);
+                }
                 SessionMeta meta = SessionMeta.get(session);
                 if (meta != null) {
                     object.put("host", meta.host);
@@ -70,6 +78,7 @@ public final class SessionRestore {
             }
         } catch (Exception ignored) {}
         prefs(context).edit().putString(KEY_TABS, array.toString()).apply();
+        AiHistory.prune(context, keepAi);
     }
 
     @NonNull
@@ -82,6 +91,7 @@ public final class SessionRestore {
                 Entry entry = new Entry();
                 entry.name = object.optString("name", null);
                 entry.renamed = object.optBoolean("renamed", false);
+                entry.ai = object.optString("ai", null);
                 entry.cwd = object.optString("cwd", null);
                 entry.host = object.optString("host", null);
                 entry.tmux = object.optBoolean("tmux", false);
@@ -158,6 +168,7 @@ public final class SessionRestore {
                 session = client.addNewSession(false, e.name, null, null, cwd);
                 SessionMeta.markRenamed(session, e.renamed && !TextUtils.isEmpty(e.name));
             }
+            AiHistory.assign(session, e.ai);
             if (first == null) first = session;
         }
         if (first != null) client.setCurrentSession(first);

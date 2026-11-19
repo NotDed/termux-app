@@ -183,6 +183,8 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
         if (session != mActivity.getCurrentSession() || !mActivity.isVisible()) {
             SessionAttention.mark(session);
             termuxSessionListNotifyUpdated();
+            // Termux is not on screen: let a notification say so
+            if (!mActivity.isVisible()) AttentionNotifier.notify(mActivity, session);
         }
 
         if (!mActivity.isVisible()) return;
@@ -264,6 +266,7 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
     public void setCurrentSession(TerminalSession session) {
         if (session == null) return;
         SessionAttention.clear(session);
+        AttentionNotifier.cancel(mActivity, session);
 
         if (mActivity.getTerminalView().attachSession(session)) {
             // notify about switched session if not already displaying the session
@@ -436,6 +439,7 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
     }
 
     public void removeFinishedSession(TerminalSession finishedSession) {
+        AttentionNotifier.cancel(mActivity, finishedSession);
         // Return pressed with finished session - remove it.
         TermuxService service = mActivity.getTermuxService();
         if (service == null) return;

@@ -296,6 +296,7 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
 
         // Back on screen: the session shown no longer needs attention
         com.termux.app.terminal.SessionAttention.clear(getCurrentSession());
+        com.termux.app.terminal.AttentionNotifier.cancel(this, getCurrentSession());
         termuxSessionListNotifyUpdated();
 
         if (mTermuxTerminalViewClient != null)
@@ -410,6 +411,8 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
                 mTermuxTerminalSessionClient.addNewSession(isFailSafe, null);
             } else {
                 mTermuxTerminalSessionClient.setCurrentSession(mTermuxTerminalSessionClient.getCurrentStoredSessionOrLast());
+                // Opened from a "needs attention" notification: show that tab
+                openAttentionSession(getIntent());
             }
         }
 
@@ -828,6 +831,28 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
 
     public void setExtraKeysView(ExtraKeysView extraKeysView) {
         mExtraKeysView = extraKeysView;
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        openAttentionSession(intent);
+    }
+
+    /** Switch to the tab a "needs attention" notification is about, then forget the request. */
+    private void openAttentionSession(@Nullable Intent intent) {
+        if (intent == null || mTermuxService == null || mTermuxTerminalSessionClient == null) return;
+        String handle = intent.getStringExtra(com.termux.app.terminal.AttentionNotifier.EXTRA_ATTENTION_SESSION);
+        if (handle == null) return;
+        intent.removeExtra(com.termux.app.terminal.AttentionNotifier.EXTRA_ATTENTION_SESSION);
+        for (com.termux.shared.shell.TermuxSession termuxSession : mTermuxService.getTermuxSessions()) {
+            TerminalSession session = termuxSession.getTerminalSession();
+            if (session != null && handle.equals(session.mHandle)) {
+                mTermuxTerminalSessionClient.setCurrentSession(session);
+                return;
+            }
+        }
     }
 
     @Nullable

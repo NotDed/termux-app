@@ -182,7 +182,7 @@ public class ForwardsController {
         popup.addMessage(TabBarPopup.Kind.ERROR, message, mActivity.getString(R.string.action_ai_diagnose), () -> {
             popup.dismiss();
             String log = BackgroundShell.tail(forward.logFile(), 40);
-            ClaudeAiPanels.diagnose(mActivity, "A background port forward named \"" + forward.name + "\": ssh -N -o BatchMode=yes " +
+            ClaudeAiPanels.diagnose(mActivity, mActivity.getString(R.string.title_ai_history_forward, forward.name), "A background port forward named \"" + forward.name + "\": ssh -N -o BatchMode=yes " +
                 "-o ExitOnForwardFailure=yes -L " + forward.spec + " -- " + forward.host +
                 " (key-based login only, no terminal for a password)", (log.isEmpty() ? "" : log + "\n") + message);
         });

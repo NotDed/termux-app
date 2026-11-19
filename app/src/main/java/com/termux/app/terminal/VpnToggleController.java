@@ -196,7 +196,7 @@ public class VpnToggleController {
             panel.addButtons(
                 new TabBarPopup.Button(mActivity.getString(R.string.action_ai_diagnose), TabBarPopup.Button.TEXT, () -> {
                     panel.dismiss();
-                    ClaudeAiPanels.diagnose(mActivity, "Turning the VPN on with ~/connect-vpn-termux.sh on: openconnect " +
+                    ClaudeAiPanels.diagnose(mActivity, mActivity.getString(R.string.title_ai_history_vpn), "Turning the VPN on with ~/connect-vpn-termux.sh on: openconnect " +
                         "--protocol=gp in user space, with ocproxy as a SOCKS5 proxy on 127.0.0.1:" + PROXY_PORT +
                         ", no root. The script prints the end of the openconnect log.", output);
                 }),

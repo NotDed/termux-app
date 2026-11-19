@@ -17,6 +17,8 @@ public final class TabBarFeatures {
     public static final String SESSION_RESTORE = "session_restore";
     /** The Claude API helpers: what happened, ask for a command, ask about failures, name with AI. */
     public static final String AI = "ai";
+    /** Notify when a tab rings the bell while Termux isn't on screen. */
+    public static final String ATTENTION_NOTIFY = "attention_notify";
 
     private static final String PREFS_NAME = "tabbar_features";
 
@@ -52,6 +54,7 @@ public final class TabBarFeatures {
 
         panel.addHeader(context.getString(R.string.feature_group_sessions));
         add(context, panel, SESSION_RESTORE, R.string.feature_session_restore, R.string.feature_session_restore_desc, onChanged, null);
+        add(context, panel, ATTENTION_NOTIFY, R.string.feature_attention_notify, R.string.feature_attention_notify_desc, onChanged, null);
 
         panel.addHeader(context.getString(R.string.feature_group_ai));
         add(context, panel, AI, R.string.feature_ai, R.string.feature_ai_desc, onChanged, null);
