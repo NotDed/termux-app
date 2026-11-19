@@ -294,6 +294,8 @@
     <string name="action_done">Done</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_tools">Tools</string>
+    <string name="feature_smart_summary">Smart notification summaries</string>
+    <string name="feature_smart_summary_desc">Sends a tab\'s last 60 lines (secrets masked) to Claude when it needs attention, for a one-line summary. Off by default.</string>
     <string name="feature_attention_notify">Notify when a tab needs attention</string>
     <string name="feature_attention_notify_desc">When Termux is not on screen, like a Claude prompt waiting for you</string>
     <string name="notification_channel_attention">Tabs needing attention</string>

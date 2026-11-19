@@ -249,6 +249,18 @@ final class ClaudeAssistant {
         }
     }
 
+    /** A one-sentence summary of what a tab that rang the bell is waiting for, for its notification. */
+    static void summarizeAttention(Context context, String where, String screen, Callback callback) {
+        String system = "A terminal tab rang its bell, so it probably waits for the user. From the end of its " +
+            "screen, write summary: one plain sentence, at most 120 characters, saying what is waiting and for " +
+            "what, including the choices it offers if any (like \"Claude wants to run rm -rf build/ and asks " +
+            "Yes / Yes always / No\"). No markdown.";
+        String user = "Where: " + where + "\n\nEnd of the screen (secrets masked):\n```\n" + screen + "\n```";
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("summary", stringType());
+        request(context, PREF_LIGHT_MODEL, system, user, objectSchema(properties), callback);
+    }
+
     /** Check that a key works with a tiny token count, before saving it. */
     static void testKey(String apiKey, Callback callback) {
         EXECUTOR.execute(() -> {

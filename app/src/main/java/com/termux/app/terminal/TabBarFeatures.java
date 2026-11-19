@@ -19,6 +19,8 @@ public final class TabBarFeatures {
     public static final String AI = "ai";
     /** Notify when a tab rings the bell while Termux isn't on screen. */
     public static final String ATTENTION_NOTIFY = "attention_notify";
+    /** Let Claude summarize a tab for its attention notification. Sends the screen without a tap, so off by default. */
+    public static final String SMART_SUMMARY = "smart_summary";
 
     private static final String PREFS_NAME = "tabbar_features";
 
@@ -30,6 +32,10 @@ public final class TabBarFeatures {
 
     public static boolean isEnabled(Context context, String key) {
         return prefs(context).getBoolean(key, true);
+    }
+
+    public static boolean isEnabled(Context context, String key, boolean defaultValue) {
+        return prefs(context).getBoolean(key, defaultValue);
     }
 
     /** Show the features panel. {@code onChanged} runs after every change. */
@@ -58,6 +64,11 @@ public final class TabBarFeatures {
 
         panel.addHeader(context.getString(R.string.feature_group_ai));
         add(context, panel, AI, R.string.feature_ai, R.string.feature_ai_desc, onChanged, null);
+        panel.addSwitchRow(context.getString(R.string.feature_smart_summary), context.getString(R.string.feature_smart_summary_desc),
+            false, isEnabled(context, SMART_SUMMARY, false), checked -> {
+                prefs(context).edit().putBoolean(SMART_SUMMARY, checked).apply();
+                if (onChanged != null) onChanged.run();
+            });
         if (context instanceof com.termux.app.TermuxActivity) {
             com.termux.app.TermuxActivity activity = (com.termux.app.TermuxActivity) context;
             String key = ClaudeApiKeyStore.describe(context);

@@ -25,7 +25,6 @@ public final class AttentionNotifier {
     public static final String EXTRA_ATTENTION_SESSION = "com.termux.app.extra.ATTENTION_SESSION";
 
     private static final String CHANNEL_ID = "termux_attention";
-    private static final int MAX_TEXT = 100;
     private static boolean sChannelCreated;
 
     private AttentionNotifier() {}
@@ -50,13 +49,63 @@ public final class AttentionNotifier {
         PendingIntent open = PendingIntent.getActivity(context, idFor(session), intent, flags);
 
         String title = context.getString(R.string.notification_attention_title, describe(context, session));
-        String text = lastLine(session);
+        String screen = screenOf(session, SCREEN_LINES);
+        AttentionText text = AttentionText.from(screen);
+        int id = idFor(session);
+        post(context, manager, id, title, text.shortText, text.fullText, open);
+        SHOWING.add(id);
+        maybeSummarize(context, session, id, title, text, open);
+    }
+
+    /** Lines of the tab's screen that are formatted, and sent for a summary when that's turned on. */
+    private static final int SCREEN_LINES = 40;
+    private static final int SUMMARY_LINES = 60;
+    private static final long SUMMARY_INTERVAL_MS = 60_000;
+    /** Notifications currently shown, so a late summary doesn't bring back a dismissed one. */
+    private static final java.util.Set<Integer> SHOWING = new java.util.HashSet<>();
+    private static final java.util.Map<Integer, Long> LAST_SUMMARY = new java.util.HashMap<>();
+
+    /**
+     * With smart summaries on, ask Claude for a one-sentence summary and update the notification
+     * in place. At most once a minute per tab; any failure keeps the formatted text.
+     */
+    private static void maybeSummarize(Context context, TerminalSession session, int id, String title,
+                                       AttentionText text, PendingIntent open) {
+        if (!TabBarFeatures.isEnabled(context, TabBarFeatures.SMART_SUMMARY, false)) return;
+        if (!TabBarFeatures.isEnabled(context, TabBarFeatures.AI) || !ClaudeApiKeyStore.hasKey(context)) return;
+        long now = System.currentTimeMillis();
+        Long last = LAST_SUMMARY.get(id);
+        if (last != null && now - last < SUMMARY_INTERVAL_MS) return;
+        LAST_SUMMARY.put(id, now);
+
+        ClaudeAssistant.summarizeAttention(context, ClaudeAiPanels.describeWhere(session),
+            screenOf(session, SUMMARY_LINES), answer -> {
+                if (answer.error != null || answer.summary == null || !SHOWING.contains(id)) return;
+                NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                if (manager == null || !isShowing(manager, id)) return;
+                String full = text.fullText.isEmpty() ? answer.summary : answer.summary + "\n\n" + text.fullText;
+                post(context, manager, id, title, answer.summary, full, open);
+            });
+    }
+
+    /** Whether the notification is still there, so a late summary doesn't bring back a swiped-away one. */
+    private static boolean isShowing(NotificationManager manager, int id) {
+        if (Build.VERSION.SDK_INT < 23) return true;
+        try {
+            for (android.service.notification.StatusBarNotification shown : manager.getActiveNotifications())
+                if (shown.getId() == id) return true;
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    private static void post(Context context, NotificationManager manager, int id, String title, String text,
+                             String bigText, PendingIntent open) {
 
         Notification.Builder builder = new Notification.Builder(context)
             .setSmallIcon(R.drawable.ic_service_notification)
             .setContentTitle(title)
             .setContentText(text)
-            .setStyle(new Notification.BigTextStyle().bigText(text))
+            .setStyle(new Notification.BigTextStyle().bigText(bigText))
             .setContentIntent(open)
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
@@ -72,7 +121,7 @@ public final class AttentionNotifier {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) builder.setChannelId(CHANNEL_ID);
 
         try {
-            manager.notify(idFor(session), builder.build());
+            manager.notify(id, builder.build());
         } catch (Exception ignored) {
             // No permission to post notifications: the red dot still shows
         }
@@ -82,7 +131,9 @@ public final class AttentionNotifier {
     public static void cancel(Context context, TerminalSession session) {
         if (context == null || session == null) return;
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager != null) manager.cancel(idFor(session));
+        int id = idFor(session);
+        SHOWING.remove(id);
+        if (manager != null) manager.cancel(id);
     }
 
     private static int idFor(TerminalSession session) {
@@ -105,21 +156,14 @@ public final class AttentionNotifier {
         return TextUtils.isEmpty(title) ? context.getString(R.string.notification_attention_tab) : title;
     }
 
-    /** The last non-empty line on the tab's screen, with obvious secrets masked. */
-    private static String lastLine(TerminalSession session) {
+    /** The last {@code lines} lines of the tab's screen, with obvious secrets masked. */
+    private static String screenOf(TerminalSession session, int lines) {
         try {
             String transcript = ShellUtils.getTerminalSessionTranscriptText(session, false, true);
-            if (transcript != null) {
-                String[] lines = transcript.split("\n");
-                for (int i = lines.length - 1; i >= 0; i--) {
-                    String line = lines[i].trim();
-                    if (line.isEmpty()) continue;
-                    line = ClaudeAssistant.mask(line);
-                    return line.length() > MAX_TEXT ? line.substring(0, MAX_TEXT) + "…" : line;
-                }
-            }
-        } catch (Exception ignored) {}
-        return "";
+            return ClaudeAssistant.mask(ClaudeAssistant.tail(transcript, lines));
+        } catch (Exception e) {
+            return "";
+        }
     }
 
 }
