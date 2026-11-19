@@ -337,6 +337,12 @@ public class TermuxSessionsTabBarController {
                 });
         }
 
+        sheet.addLinkRow(mActivity.getString(R.string.action_tools_keyboard), mActivity.getString(R.string.msg_tools_keyboard), () -> {
+            sheet.dismiss();
+            TermuxTerminalViewClient viewClient = mActivity.getTermuxTerminalViewClient();
+            if (viewClient != null) viewClient.onToggleSoftKeyboardRequest();
+        });
+
         sheet.addSwitchRow(mActivity.getString(R.string.action_tools_extra_keys), mActivity.getString(R.string.msg_tools_extra_keys),
             false, mActivity.isTerminalToolbarShown(), checked -> {
                 if (checked != mActivity.isTerminalToolbarShown()) mActivity.toggleTerminalToolbar();

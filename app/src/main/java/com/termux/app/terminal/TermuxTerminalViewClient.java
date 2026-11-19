@@ -188,7 +188,11 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
         }
 
         if (!term.isMouseTrackingActive() && !e.isFromSource(InputDevice.SOURCE_MOUSE)) {
-            if (!KeyboardUtils.areDisableSoftKeyboardFlagsSet(mActivity))
+            // Once closed, the keyboard stays closed until asked for (the KEYBOARD key or Tools),
+            // unless tapping the terminal to open it is turned on in the tab bar settings
+            if (!TabBarFeatures.isEnabled(mActivity, TabBarFeatures.TAP_OPENS_KEYBOARD, false))
+                Logger.logVerbose(LOG_TAG, "Not showing soft keyboard onSingleTapUp since tap-to-open is off");
+            else if (!KeyboardUtils.areDisableSoftKeyboardFlagsSet(mActivity))
                 KeyboardUtils.showSoftKeyboard(mActivity, mActivity.getTerminalView());
             else
                 Logger.logVerbose(LOG_TAG, "Not showing soft keyboard onSingleTapUp since its disabled");
@@ -498,7 +502,6 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
      * drawer or extra keys, or with ctrl+alt+k hardware keyboard shortcut.
      */
     public void onToggleSoftKeyboardRequest() {
-        android.util.Log.w("TermuxKeyboard", "onToggleSoftKeyboardRequest", new Throwable("caller"));
         // If soft keyboard toggle behaviour is enable/disabled
         if (mActivity.getProperties().shouldEnableDisableSoftKeyboardOnToggle()) {
             // If soft keyboard is visible
@@ -516,7 +519,7 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
                 KeyboardUtils.clearDisableSoftKeyboardFlags(mActivity);
                 if(mShowSoftKeyboardWithDelayOnce) {
                     mShowSoftKeyboardWithDelayOnce = false;
-                    postShowSoftKeyboard(500);
+                    mActivity.getTerminalView().postDelayed(getShowSoftKeyboardRunnable(), 500);
                     mActivity.getTerminalView().requestFocus();
                 } else
                     KeyboardUtils.showSoftKeyboard(mActivity, mActivity.getTerminalView());
@@ -537,7 +540,6 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     }
 
     public void setSoftKeyboardState(boolean isStartup, boolean isReloadTermuxProperties) {
-        android.util.Log.w("TermuxKeyboard", "setSoftKeyboardState startup=" + isStartup + " reload=" + isReloadTermuxProperties, new Throwable("caller"));
         boolean noShowKeyboard = false;
 
         // Requesting terminal view focus is necessary regardless of if soft keyboard is to be
@@ -613,14 +615,8 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
             // will also show keyboard even if it was closed before opening url. #2111
             Logger.logVerbose(LOG_TAG, "Requesting TerminalView focus and showing soft keyboard");
             mActivity.getTerminalView().requestFocus();
-            postShowSoftKeyboard(300);
+            mActivity.getTerminalView().postDelayed(getShowSoftKeyboardRunnable(), 300);
         }
-    }
-
-    /** Diagnostics: who schedules showing the keyboard. */
-    private void postShowSoftKeyboard(long delay) {
-        android.util.Log.w("TermuxKeyboard", "postShowSoftKeyboard delay=" + delay, new Throwable("caller"));
-        mActivity.getTerminalView().postDelayed(getShowSoftKeyboardRunnable(), delay);
     }
 
     private Runnable getShowSoftKeyboardRunnable() {

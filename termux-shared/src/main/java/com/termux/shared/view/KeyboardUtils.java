@@ -19,8 +19,6 @@ public class KeyboardUtils {
     private static final String LOG_TAG = "KeyboardUtils";
 
     public static void setSoftKeyboardVisibility(@NonNull final Runnable showSoftKeyboardRunnable, final Activity activity, final View view, final boolean visible) {
-        // Diagnostics for the keyboard coming back after being closed
-        android.util.Log.w("TermuxKeyboard", "setSoftKeyboardVisibility visible=" + visible, new Throwable("caller"));
         if (visible) {
             // A Runnable with a delay is used, otherwise soft keyboard may not automatically open
             // on some devices, but still may fail
@@ -65,7 +63,6 @@ public class KeyboardUtils {
      * https://cs.android.com/android/platform/superproject/+/android-11.0.0_r3:frameworks/base/core/java/android/inputmethodservice/InputMethodService.java;l=2022
      */
     public static void showSoftKeyboard(final Context context, final View view) {
-        android.util.Log.w("TermuxKeyboard", "showSoftKeyboard", new Throwable("caller"));
         if (context == null || view == null) return;
         InputMethodManager inputMethodManager = (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
         if (inputMethodManager != null)

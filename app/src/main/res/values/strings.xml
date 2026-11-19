@@ -294,6 +294,11 @@
     <string name="action_done">Done</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_tools">Tools</string>
+    <string name="action_tools_keyboard">⌨ Keyboard</string>
+    <string name="msg_tools_keyboard">Show or hide the keyboard</string>
+    <string name="feature_group_keyboard">Keyboard</string>
+    <string name="feature_tap_opens_keyboard">Tap terminal to open keyboard</string>
+    <string name="feature_tap_opens_keyboard_desc">Off: the keyboard only opens with the ⌨ key or ☰ → Keyboard</string>
     <string name="feature_smart_summary">Smart notification summaries</string>
     <string name="feature_smart_summary_desc">Sends a tab\'s last 60 lines (secrets masked) to Claude when it needs attention, for a one-line summary. Off by default.</string>
     <string name="feature_attention_notify">Notify when a tab needs attention</string>

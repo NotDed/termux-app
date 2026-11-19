@@ -21,6 +21,8 @@ public final class TabBarFeatures {
     public static final String ATTENTION_NOTIFY = "attention_notify";
     /** Let Claude summarize a tab for its attention notification. Sends the screen without a tap, so off by default. */
     public static final String SMART_SUMMARY = "smart_summary";
+    /** Tapping the terminal opens the keyboard, like stock Termux. Off: only the KEYBOARD key or Tools open it. */
+    public static final String TAP_OPENS_KEYBOARD = "tap_opens_keyboard";
 
     private static final String PREFS_NAME = "tabbar_features";
 
@@ -57,6 +59,13 @@ public final class TabBarFeatures {
         panel.addHeader(context.getString(R.string.feature_group_ssh));
         sshOptions[0] = add(context, panel, SSH_REACHABILITY, R.string.feature_ssh_reachability, R.string.feature_ssh_reachability_desc, onChanged, null);
         for (TabBarPopup.Row row : sshOptions) row.setEnabled(isEnabled(context, SSH));
+
+        panel.addHeader(context.getString(R.string.feature_group_keyboard));
+        panel.addSwitchRow(context.getString(R.string.feature_tap_opens_keyboard), context.getString(R.string.feature_tap_opens_keyboard_desc),
+            false, isEnabled(context, TAP_OPENS_KEYBOARD, false), checked -> {
+                prefs(context).edit().putBoolean(TAP_OPENS_KEYBOARD, checked).apply();
+                if (onChanged != null) onChanged.run();
+            });
 
         panel.addHeader(context.getString(R.string.feature_group_sessions));
         add(context, panel, SESSION_RESTORE, R.string.feature_session_restore, R.string.feature_session_restore_desc, onChanged, null);
