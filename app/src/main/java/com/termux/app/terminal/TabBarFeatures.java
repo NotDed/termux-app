@@ -13,6 +13,8 @@ public final class TabBarFeatures {
     public static final String FORWARDS = "forwards";
     public static final String SNIPPETS = "snippets";
     public static final String SSH = "ssh";
+    /** The 📎 key: paste a clipboard, gallery or camera image as a path Claude attaches. */
+    public static final String PASTE_IMAGE = "paste_image";
     public static final String SSH_REACHABILITY = "ssh_reachability";
     public static final String SESSION_RESTORE = "session_restore";
     /** The Claude API helpers: what happened, ask for a command, ask about failures, name with AI. */
@@ -50,6 +52,8 @@ public final class TabBarFeatures {
         add(context, panel, SSH, R.string.feature_ssh, R.string.feature_ssh_desc, onChanged, checked -> {
             for (TabBarPopup.Row row : sshOptions) row.setEnabled(checked);
         });
+
+        add(context, panel, PASTE_IMAGE, R.string.feature_paste_image, R.string.feature_paste_image_desc, onChanged, null);
 
         panel.addHeader(context.getString(R.string.feature_group_in_tools));
         add(context, panel, VPN, R.string.feature_vpn, R.string.feature_vpn_desc, onChanged, null);

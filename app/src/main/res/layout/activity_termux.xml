@@ -175,6 +175,18 @@
                 tools:ignore="HardcodedText" />
 
             <TextView
+                android:id="@+id/paste_image_tab_button"
+                android:layout_width="36dp"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="📎"
+                android:textColor="#FFECECEC"
+                android:textSize="15sp"
+                android:maxLines="1"
+                android:contentDescription="@string/title_paste_image"
+                tools:ignore="HardcodedText" />
+
+            <TextView
                 android:id="@+id/tools_tab_button"
                 android:layout_width="36dp"
                 android:layout_height="match_parent"

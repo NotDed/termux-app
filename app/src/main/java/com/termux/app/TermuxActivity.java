@@ -180,6 +180,7 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        com.termux.app.terminal.ImagePaste.onRestoreInstanceState(savedInstanceState);
 
         Logger.logDebug(LOG_TAG, "onCreate");
         isOnResumeAfterOnCreate = true;
@@ -355,6 +356,14 @@ public final class TermuxActivity extends Activity implements ServiceConnection 
     public void onSaveInstanceState(@NonNull Bundle savedInstanceState) {
         super.onSaveInstanceState(savedInstanceState);
         saveTerminalToolbarTextInput(savedInstanceState);
+        com.termux.app.terminal.ImagePaste.onSaveInstanceState(savedInstanceState);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        // Gallery and camera results for the 📎 key
+        com.termux.app.terminal.ImagePaste.onActivityResult(this, requestCode, resultCode, data);
     }
 
 

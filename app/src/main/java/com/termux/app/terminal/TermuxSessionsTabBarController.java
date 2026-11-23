@@ -68,6 +68,7 @@ public class TermuxSessionsTabBarController {
     private final ClaudeUsageController mClaudeUsageController;
     private final TextView mClaudeUsageButton;
     private final View mSshButton;
+    private final View mPasteImageButton;
 
     private final Runnable mSaveRunnable = this::saveSessions;
 
@@ -112,6 +113,10 @@ public class TermuxSessionsTabBarController {
         styleKey(mSshButton);
         mSshButton.setOnClickListener(this::showSshHostsPopup);
 
+        mPasteImageButton = barRoot.findViewById(R.id.paste_image_tab_button);
+        styleKey(mPasteImageButton);
+        mPasteImageButton.setOnClickListener(v -> ImagePaste.showPopup(mActivity, v));
+
         View newSessionButton = barRoot.findViewById(R.id.new_session_tab_button);
         styleKey(newSessionButton);
         newSessionButton.setOnClickListener(v -> {
@@ -137,6 +142,7 @@ public class TermuxSessionsTabBarController {
     public void applyFeatures() {
         mClaudeUsageButton.setVisibility(TabBarFeatures.isEnabled(mActivity, TabBarFeatures.CLAUDE_USAGE) ? View.VISIBLE : View.GONE);
         mSshButton.setVisibility(TabBarFeatures.isEnabled(mActivity, TabBarFeatures.SSH) ? View.VISIBLE : View.GONE);
+        mPasteImageButton.setVisibility(TabBarFeatures.isEnabled(mActivity, TabBarFeatures.PASTE_IMAGE) ? View.VISIBLE : View.GONE);
         update();
         updateToolsKey();
         refreshTools();
