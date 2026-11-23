@@ -115,7 +115,7 @@ public final class ImagePaste {
         return uris;
     }
 
-    private static void pickFromGallery(Activity activity) {
+    private static void pickFromGallery(TermuxActivity activity) {
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT)
             .setType("image/*")
             .addCategory(Intent.CATEGORY_OPENABLE)
@@ -127,7 +127,7 @@ public final class ImagePaste {
         }
     }
 
-    private static void takePhoto(Activity activity) {
+    private static void takePhoto(TermuxActivity activity) {
         Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
         sCameraUri = null;
         try {
