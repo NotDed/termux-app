@@ -38,7 +38,19 @@ public final class SessionRestore {
         String cwd;
         String host;
         boolean tmux;
+        /** A local tab that was attached to this tmux session, with its -L/-S socket options. */
+        String localTmux;
+        final List<String> localTmuxSocket = new ArrayList<>();
+        /** A local tab that was running this Claude Code conversation. */
+        String claudeSession;
+        /** Null for the default ~/.claude. */
+        String claudeConfigDir;
+        String claudeCwd;
+        String claudeName;
     }
+
+    /** Detection reads /proc and may call tmux, so it runs off the main thread, in order. */
+    private static final java.util.concurrent.ExecutorService SAVER = java.util.concurrent.Executors.newSingleThreadExecutor();
 
     private SessionRestore() {}
 
@@ -52,10 +64,12 @@ public final class SessionRestore {
 
     public static void save(Context context, List<TermuxSession> sessions) {
         if (!sReadyToSave || sessions == null) return;
-        JSONArray array = new JSONArray();
+        // Snapshot on the main thread; what runs in each local tab is found in the background
+        List<JSONObject> objects = new ArrayList<>();
+        List<Integer> shellPids = new ArrayList<>();
         List<String> keepAi = new ArrayList<>();
         try {
-            for (TermuxSession termuxSession : sessions) {
+            for (TermuxSession termuxSession : new ArrayList<>(sessions)) {
                 TerminalSession session = termuxSession == null ? null : termuxSession.getTerminalSession();
                 if (session == null || !session.isRunning()) continue;
                 JSONObject object = new JSONObject();
@@ -70,14 +84,50 @@ public final class SessionRestore {
                 if (meta != null) {
                     object.put("host", meta.host);
                     object.put("tmux", meta.tmux);
+                    shellPids.add(-1);
                 } else {
                     String cwd = session.getCwd();
                     if (cwd != null) object.put("cwd", cwd);
+                    shellPids.add(session.getPid());
+                }
+                objects.add(object);
+            }
+        } catch (Exception ignored) {}
+
+        Context app = context.getApplicationContext();
+        String home = TermuxConstants.TERMUX_HOME_DIR_PATH;
+        TabProcesses.Runner runner = command -> {
+            List<String> full = new ArrayList<>(command);
+            full.set(0, TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + "/" + full.get(0));
+            return TabProcesses.runSimple(BackgroundShell.newProcessBuilder(app, full.toArray(new String[0])));
+        };
+        SAVER.execute(() -> {
+            JSONArray array = new JSONArray();
+            for (int i = 0; i < objects.size(); i++) {
+                JSONObject object = objects.get(i);
+                int pid = shellPids.get(i);
+                if (pid > 0) {
+                    try {
+                        TabProcesses.Result found = TabProcesses.detect(pid, home, runner);
+                        if (found.tmuxSession != null) {
+                            JSONObject tmux = new JSONObject();
+                            tmux.put("session", found.tmuxSession);
+                            tmux.put("socket", new JSONArray(found.tmuxSocketArgs));
+                            object.put("localTmux", tmux);
+                        } else if (found.claudeSessionId != null) {
+                            JSONObject claude = new JSONObject();
+                            claude.put("session", found.claudeSessionId);
+                            if (found.claudeConfigDir != null) claude.put("configDir", found.claudeConfigDir);
+                            if (found.claudeCwd != null) claude.put("cwd", found.claudeCwd);
+                            if (found.claudeName != null) claude.put("name", found.claudeName);
+                            object.put("claude", claude);
+                        }
+                    } catch (Exception ignored) {}
                 }
                 array.put(object);
             }
-        } catch (Exception ignored) {}
-        prefs(context).edit().putString(KEY_TABS, array.toString()).apply();
+            prefs(app).edit().putString(KEY_TABS, array.toString()).apply();
+        });
         AiHistory.prune(context, keepAi);
     }
 
@@ -96,6 +146,25 @@ public final class SessionRestore {
                 entry.host = object.optString("host", null);
                 entry.tmux = object.optBoolean("tmux", false);
                 if (entry.host != null && !SshConfigHosts.isSafeHost(entry.host)) entry.host = null;
+                JSONObject tmux = object.optJSONObject("localTmux");
+                if (tmux != null && TabProcesses.TMUX_NAME.matcher(tmux.optString("session", "")).matches()) {
+                    entry.localTmux = tmux.optString("session");
+                    JSONArray socket = tmux.optJSONArray("socket");
+                    for (int k = 0; socket != null && k + 1 < socket.length(); k += 2) {
+                        String option = socket.optString(k), value = socket.optString(k + 1);
+                        if ((option.equals("-L") || option.equals("-S")) && !value.isEmpty()) {
+                            entry.localTmuxSocket.add(option);
+                            entry.localTmuxSocket.add(value);
+                        }
+                    }
+                }
+                JSONObject claude = object.optJSONObject("claude");
+                if (claude != null && TabProcesses.UUID.matcher(claude.optString("session", "")).matches()) {
+                    entry.claudeSession = claude.optString("session");
+                    entry.claudeConfigDir = safeConfigDir(claude.optString("configDir", null));
+                    entry.claudeCwd = claude.optString("cwd", null);
+                    entry.claudeName = claude.optString("name", null);
+                }
                 entries.add(entry);
             }
         } catch (Exception ignored) {}
@@ -125,9 +194,19 @@ public final class SessionRestore {
         java.util.Arrays.fill(selected, true);
         for (int i = 0; i < entries.size(); i++) {
             Entry e = entries.get(i);
-            String label = e.host != null ? "ssh " + e.host + (e.tmux ? " · tmux" : "")
-                : (!TextUtils.isEmpty(e.name) ? e.name : "shell");
+            String label;
             String subtitle = e.host != null ? null : (e.cwd != null ? shortPath(e.cwd) : null);
+            if (e.host != null) {
+                label = "ssh " + e.host + (e.tmux ? " · tmux" : "");
+            } else if (e.localTmux != null) {
+                label = "tmux · " + e.localTmux;
+            } else if (e.claudeSession != null) {
+                String account = e.claudeConfigDir == null ? "" : " (" + new File(e.claudeConfigDir).getName().replaceFirst("^\\.claude-?", "") + ")";
+                label = "claude · " + (TextUtils.isEmpty(e.claudeName) ? e.claudeSession.substring(0, 8) : e.claudeName) + account;
+                if (e.claudeCwd != null) subtitle = shortPath(e.claudeCwd);
+            } else {
+                label = !TextUtils.isEmpty(e.name) ? e.name : "shell";
+            }
             final int index = i;
             panel.addCheckRow((i + 1) + "  " + label, subtitle, true, checked -> selected[index] = checked);
         }
@@ -165,13 +244,40 @@ public final class SessionRestore {
                 }
             } else {
                 String cwd = e.cwd != null && new File(e.cwd).isDirectory() ? e.cwd : TermuxConstants.TERMUX_HOME_DIR_PATH;
-                session = client.addNewSession(false, e.name, null, null, cwd);
+                String bin = TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH;
+                if (e.localTmux != null) {
+                    // Reattach, or recreate under the same name if tmux was killed with Termux.
+                    // Values are passed as arguments, never inside the script.
+                    List<String> args = new ArrayList<>();
+                    args.add("-c");
+                    args.add("\"" + bin + "/tmux\" \"$@\" new-session -A -s \"$0\"; exec \"" + bin + "/login\"");
+                    args.add(e.localTmux);
+                    args.addAll(e.localTmuxSocket);
+                    session = client.addNewSession(false, e.name, bin + "/bash", args.toArray(new String[0]), cwd);
+                } else if (e.claudeSession != null) {
+                    String claudeCwd = e.claudeCwd != null && new File(e.claudeCwd).isDirectory() ? e.claudeCwd : cwd;
+                    session = client.addNewSession(false, e.name, bin + "/bash", new String[]{"-c",
+                        "cd \"$0\" 2>/dev/null; if [ -n \"$1\" ]; then export CLAUDE_CONFIG_DIR=\"$1\"; fi; \"" + bin +
+                            "/claude\" --resume \"$2\"; exec \"" + bin + "/login\"",
+                        claudeCwd, e.claudeConfigDir == null ? "" : e.claudeConfigDir, e.claudeSession}, claudeCwd);
+                } else {
+                    session = client.addNewSession(false, e.name, null, null, cwd);
+                }
                 SessionMeta.markRenamed(session, e.renamed && !TextUtils.isEmpty(e.name));
             }
             AiHistory.assign(session, e.ai);
             if (first == null) first = session;
         }
         if (first != null) client.setCurrentSession(first);
+    }
+
+    /** A Claude config folder must be a .claude* folder in HOME, else the default is used. */
+    private static String safeConfigDir(String dir) {
+        if (TextUtils.isEmpty(dir)) return null;
+        File file = new File(dir);
+        String home = TermuxConstants.TERMUX_HOME_DIR_PATH;
+        if (!file.isDirectory() || !home.equals(file.getParent()) || !file.getName().startsWith(".claude")) return null;
+        return file.getPath();
     }
 
     private static String shortPath(String path) {
