@@ -45,12 +45,16 @@ public final class ImagePaste {
 
     public static final int REQUEST_PICK_IMAGES = 0x1A01;
     public static final int REQUEST_TAKE_PHOTO = 0x1A02;
+    public static final int REQUEST_PICK_FILES = 0x1A03;
     private static final String STATE_CAMERA_URI = "image_paste_camera_uri";
     private static final String STATE_TARGET = "image_paste_target";
 
     private static final long MAX_BYTES = 20L * 1024 * 1024;
     private static final long KEEP_MS = 7L * 24 * 60 * 60 * 1000;
     private static final File DIR = new File(TermuxConstants.TERMUX_HOME_DIR_PATH, ".cache/pasted-images");
+    /** Documents are kept apart from images, under their own (made safe) names. */
+    private static final File FILES_DIR = new File(TermuxConstants.TERMUX_HOME_DIR_PATH, ".cache/pasted-files");
+    private static final long MAX_FILE_BYTES = 32L * 1024 * 1024;
 
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
@@ -88,6 +92,10 @@ public final class ImagePaste {
         popup.addLinkRow(activity.getString(R.string.action_paste_image_camera), null, () -> {
             popup.dismiss();
             takePhoto(activity);
+        });
+        popup.addLinkRow(activity.getString(R.string.action_attach_document), activity.getString(R.string.msg_attach_document), () -> {
+            popup.dismiss();
+            pickFiles(activity);
         });
         popup.addFooter(activity.getString(R.string.msg_paste_image_footer));
         popup.show(anchor);
@@ -127,6 +135,18 @@ public final class ImagePaste {
         }
     }
 
+    private static void pickFiles(TermuxActivity activity) {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT)
+            .setType("*/*")
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        try {
+            activity.startActivityForResult(Intent.createChooser(intent, activity.getString(R.string.action_attach_document)), REQUEST_PICK_FILES);
+        } catch (Exception e) {
+            showMessage(activity, TabBarPopup.Kind.ERROR, activity.getString(R.string.msg_paste_image_no_app));
+        }
+    }
+
     private static void takePhoto(TermuxActivity activity) {
         Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
         sCameraUri = null;
@@ -154,6 +174,11 @@ public final class ImagePaste {
 
     /** Handle the gallery or camera result. Returns true if it was ours. */
     public static boolean onActivityResult(TermuxActivity activity, int requestCode, int resultCode, @Nullable Intent data) {
+        if (requestCode == REQUEST_PICK_FILES) {
+            if (resultCode != Activity.RESULT_OK || data == null) return true;
+            attachFiles(activity, urisOf(data));
+            return true;
+        }
         if (requestCode == REQUEST_PICK_IMAGES) {
             if (resultCode != Activity.RESULT_OK || data == null) return true;
             List<Uri> uris = new ArrayList<>();
@@ -225,6 +250,104 @@ public final class ImagePaste {
             boolean anyFailed = failed;
             MAIN.post(() -> finish(activity, paths, anyFailed));
         });
+    }
+
+    private static List<Uri> urisOf(Intent data) {
+        List<Uri> uris = new ArrayList<>();
+        ClipData clip = data.getClipData();
+        if (clip != null) {
+            for (int i = 0; i < clip.getItemCount(); i++) {
+                Uri uri = clip.getItemAt(i).getUri();
+                if (uri != null) uris.add(uri);
+            }
+        } else if (data.getData() != null) {
+            uris.add(data.getData());
+        }
+        return uris;
+    }
+
+    /**
+     * Attach picked files: images as plain paths (Claude attaches them as images), anything else
+     * as an @ mention of its path, which Claude reads (PDFs and text directly).
+     */
+    private static void attachFiles(TermuxActivity activity, List<Uri> uris) {
+        if (uris.isEmpty()) return;
+        ContentResolver resolver = activity.getContentResolver();
+        EXECUTOR.execute(() -> {
+            cleanup();
+            List<String> tokens = new ArrayList<>();
+            boolean failed = false;
+            for (Uri uri : uris) {
+                String type = null;
+                try {
+                    type = resolver.getType(uri);
+                } catch (Exception ignored) {}
+                String token;
+                if (type != null && type.startsWith("image/")) {
+                    token = save(resolver, uri, tokens.size());
+                } else {
+                    String path = saveDocument(resolver, uri, type);
+                    token = path == null ? null : "@" + path;
+                }
+                if (token != null) tokens.add(token);
+                else failed = true;
+            }
+            boolean anyFailed = failed;
+            MAIN.post(() -> finish(activity, tokens, anyFailed));
+        });
+    }
+
+    /** Copy a document to ~/.cache/pasted-files under a safe version of its name. Returns its path, or null. */
+    @Nullable
+    private static String saveDocument(ContentResolver resolver, Uri uri, @Nullable String type) {
+        try {
+            FILES_DIR.mkdirs();
+            File file = new File(FILES_DIR, timestamp() + "-" + safeName(displayName(resolver, uri), type));
+            try (InputStream in = resolver.openInputStream(uri); OutputStream out = new FileOutputStream(file)) {
+                if (in == null) return null;
+                byte[] buffer = new byte[64 * 1024];
+                long total = 0;
+                int read;
+                while ((read = in.read(buffer)) > 0) {
+                    total += read;
+                    if (total > MAX_FILE_BYTES) {
+                        out.close();
+                        file.delete();
+                        return null;
+                    }
+                    out.write(buffer, 0, read);
+                }
+            }
+            return file.length() > 0 ? file.getAbsolutePath() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    @Nullable
+    private static String displayName(ContentResolver resolver, Uri uri) {
+        try (android.database.Cursor cursor = resolver.query(uri, new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) return cursor.getString(0);
+        } catch (Exception ignored) {}
+        String last = uri.getLastPathSegment();
+        return last == null ? null : new File(last).getName();
+    }
+
+    /** "My report (final).pdf" becomes "My_report__final_.pdf": no spaces or shell characters, at most 80. */
+    static String safeName(@Nullable String name, @Nullable String type) {
+        String safe = name == null ? "" : name.replaceAll("[^A-Za-z0-9._-]", "_").replaceAll("^\\.+", "");
+        String extension = "";
+        int dot = safe.lastIndexOf('.');
+        if (dot > 0 && safe.length() - dot <= 10) {
+            extension = safe.substring(dot);
+            safe = safe.substring(0, dot);
+        } else if (type != null) {
+            String fromType = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(type);
+            extension = fromType != null ? "." + fromType : "";
+        }
+        if (safe.isEmpty()) safe = "file";
+        if (safe.length() > 80 - extension.length()) safe = safe.substring(0, 80 - extension.length());
+        return safe + extension;
     }
 
     /** Paste the saved paths into the target tab, typed but not run. */
@@ -324,10 +447,12 @@ public final class ImagePaste {
 
     /** Remove pasted images older than a week. */
     private static void cleanup() {
-        File[] files = DIR.listFiles();
-        if (files == null) return;
         long cutoff = System.currentTimeMillis() - KEEP_MS;
-        for (File file : files) if (file.lastModified() < cutoff) file.delete();
+        for (File dir : new File[]{DIR, FILES_DIR}) {
+            File[] files = dir.listFiles();
+            if (files == null) continue;
+            for (File file : files) if (file.lastModified() < cutoff) file.delete();
+        }
     }
 
     private static void deleteCameraEntry(Context context) {
