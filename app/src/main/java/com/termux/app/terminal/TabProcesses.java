@@ -105,6 +105,76 @@ final class TabProcesses {
         return result;
     }
 
+    /**
+     * The ssh client running in the tab, as the arguments that reach the same host (options, then
+     * the destination last), or null when the tab isn't connected over SSH. The newest one wins.
+     */
+    static List<String> sshTarget(int shellPid) {
+        if (shellPid <= 0) return null;
+        try {
+            List<String> best = null;
+            long newest = -1;
+            for (int pid : descendantsOf(shellPid)) {
+                List<String> args = cmdline(pid);
+                if (args.isEmpty() || !basename(args.get(0)).equals("ssh")) continue;
+                List<String> target = parseSshArgs(args);
+                if (target == null) continue;
+                long start = startTime(pid);
+                if (start > newest) {
+                    newest = start;
+                    best = target;
+                }
+            }
+            return best;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Options of ssh that take a value and pick the host, and so are kept. */
+    private static final String KEEP_WITH_VALUE = "pliJFo";
+    /** Other ssh options that take a value, which are skipped with it. */
+    private static final String SKIP_WITH_VALUE = "BbcDEeILmOQRSWw";
+
+    /** From an ssh command line, the host-picking options and the destination (last). Null if unclear. */
+    static List<String> parseSshArgs(List<String> argv) {
+        List<String> kept = new ArrayList<>();
+        for (int i = 1; i < argv.size(); i++) {
+            String arg = argv.get(i);
+            if (arg.equals("--")) {
+                if (i + 1 >= argv.size()) return null;
+                return withDestination(kept, argv.get(i + 1));
+            }
+            if (!arg.startsWith("-") || arg.length() < 2) return withDestination(kept, arg);
+            // A group of flags, like -tt or -4p 22, where the last may take a value
+            for (int j = 1; j < arg.length(); j++) {
+                char flag = arg.charAt(j);
+                boolean keep = KEEP_WITH_VALUE.indexOf(flag) >= 0;
+                if (keep || SKIP_WITH_VALUE.indexOf(flag) >= 0) {
+                    String value;
+                    if (j + 1 < arg.length()) value = arg.substring(j + 1);
+                    else if (i + 1 < argv.size()) value = argv.get(++i);
+                    else return null;
+                    if (keep) {
+                        kept.add("-" + flag);
+                        kept.add(value);
+                    }
+                    break;
+                }
+                if (flag == '4' || flag == '6') kept.add("-" + flag);
+            }
+        }
+        return null;
+    }
+
+    private static List<String> withDestination(List<String> kept, String destination) {
+        if (destination.startsWith("-")) return null;
+        String host = destination.substring(destination.lastIndexOf('@') + 1);
+        if (host.isEmpty() || !SshConfigHosts.isSafeHost(destination)) return null;
+        kept.add(destination);
+        return kept;
+    }
+
     /** All processes under {@code root}, nearest first. */
     static List<Integer> descendantsOf(int root) {
         Map<Integer, List<Integer>> children = new HashMap<>();

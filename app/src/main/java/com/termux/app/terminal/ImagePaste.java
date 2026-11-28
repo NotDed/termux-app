@@ -97,7 +97,9 @@ public final class ImagePaste {
             popup.dismiss();
             pickFiles(activity);
         });
-        popup.addFooter(activity.getString(R.string.msg_paste_image_footer));
+        List<String> ssh = TabProcesses.sshTarget(session.getPid());
+        popup.addFooter(ssh != null ? activity.getString(R.string.msg_attach_ssh_footer, ssh.get(ssh.size() - 1))
+            : activity.getString(R.string.msg_paste_image_footer));
         popup.show(anchor);
     }
 
@@ -350,7 +352,10 @@ public final class ImagePaste {
         return safe + extension;
     }
 
-    /** Paste the saved paths into the target tab, typed but not run. */
+    /**
+     * Paste the saved paths ("@path" for documents) into the target tab, typed but not run. In an
+     * SSH tab the files are uploaded to that host first and its paths are pasted instead.
+     */
     private static void finish(TermuxActivity activity, List<String> paths, boolean failed) {
         if (paths.isEmpty()) {
             showMessage(activity, TabBarPopup.Kind.ERROR, activity.getString(R.string.msg_paste_image_failed));
@@ -361,8 +366,102 @@ public final class ImagePaste {
             showMessage(activity, TabBarPopup.Kind.INFO, activity.getString(R.string.msg_paste_image_no_tab));
             return;
         }
+        int pid = session.getPid();
+        EXECUTOR.execute(() -> {
+            List<String> ssh = TabProcesses.sshTarget(pid);
+            if (ssh == null) {
+                MAIN.post(() -> pasteInto(activity, session, paths, failed));
+                return;
+            }
+            String host = ssh.get(ssh.size() - 1);
+            TabBarPopup[] progress = new TabBarPopup[1];
+            MAIN.post(() -> {
+                progress[0] = new TabBarPopup(activity, activity.getString(R.string.title_paste_image));
+                progress[0].addMessage(TabBarPopup.Kind.INFO, activity.getString(R.string.msg_attach_uploading, host), null, null);
+                progress[0].showCentered(false, null);
+            });
+            List<String> remote = new ArrayList<>();
+            String error = null;
+            for (String token : paths) {
+                boolean document = token.startsWith("@");
+                String[] result = upload(activity, ssh, new File(document ? token.substring(1) : token));
+                if (result[0] != null) remote.add((document ? "@" : "") + result[0]);
+                else if (error == null) error = result[1];
+            }
+            String firstError = error;
+            MAIN.post(() -> {
+                if (progress[0] != null) progress[0].dismiss();
+                if (!remote.isEmpty()) pasteInto(activity, session, remote, failed);
+                if (firstError != null)
+                    showMessage(activity, TabBarPopup.Kind.ERROR, activity.getString(R.string.msg_attach_upload_failed, host, firstError));
+            });
+        });
+    }
+
+    private static void pasteInto(TermuxActivity activity, TerminalSession session, List<String> paths, boolean failed) {
+        if (!session.isRunning() || session.getEmulator() == null) {
+            showMessage(activity, TabBarPopup.Kind.INFO, activity.getString(R.string.msg_paste_image_no_tab));
+            return;
+        }
         session.getEmulator().paste(String.join(" ", paths) + " ");
         if (failed) showMessage(activity, TabBarPopup.Kind.WARN, activity.getString(R.string.msg_paste_image_some_failed));
+    }
+
+    /** Remote script: $0 is the (already safe) file name. Prints the absolute path it saved to. */
+    private static final String REMOTE_SAVE = "sh -c 'd=\"$HOME/.cache/termux-attach\"; mkdir -p \"$d\" && "
+        + "{ find \"$d\" -type f -mtime +7 -delete 2>/dev/null; cat > \"$d/$0\" && printf %s \"$d/$0\"; }' ";
+
+    /**
+     * Copy a file to the SSH host with the user's key, never prompting. Returns {remote path, null}
+     * or {null, error}. Off the main thread.
+     */
+    private static String[] upload(Context context, List<String> ssh, File file) {
+        String name = file.getName();
+        if (!name.matches("[A-Za-z0-9._-]+")) return new String[]{null, "bad file name"};
+        List<String> command = new ArrayList<>();
+        command.add(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + "/ssh");
+        command.add("-o");
+        command.add("BatchMode=yes");
+        command.add("-o");
+        command.add("ConnectTimeout=10");
+        command.addAll(ssh.subList(0, ssh.size() - 1));
+        command.add("--");
+        command.add(ssh.get(ssh.size() - 1));
+        command.add(REMOTE_SAVE + name);
+        File errors = null;
+        try {
+            errors = File.createTempFile("attach-ssh", ".err", context.getCacheDir());
+            ProcessBuilder builder = BackgroundShell.newProcessBuilder(context, command.toArray(new String[0]));
+            builder.redirectErrorStream(false);
+            builder.redirectInput(file);
+            builder.redirectError(errors);
+            Process process = builder.start();
+            StringBuilder output = new StringBuilder();
+            Thread reader = new Thread(() -> {
+                try (InputStream in = process.getInputStream()) {
+                    byte[] buffer = new byte[4096];
+                    int read;
+                    while ((read = in.read(buffer)) > 0 && output.length() < 4096)
+                        output.append(new String(buffer, 0, read, java.nio.charset.StandardCharsets.UTF_8));
+                } catch (Exception ignored) {}
+            });
+            reader.start();
+            if (!process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS)) {
+                process.destroy();
+                return new String[]{null, "timed out"};
+            }
+            reader.join(2000);
+            // The last line, in case the remote shell's startup files print something first
+            String path = output.toString().trim();
+            path = path.substring(path.lastIndexOf('\n') + 1).trim();
+            if (process.exitValue() == 0 && path.startsWith("/") && path.endsWith("/" + name)) return new String[]{path, null};
+            String message = BackgroundShell.tail(errors.getAbsolutePath(), 1);
+            return new String[]{null, message.isEmpty() ? "ssh exited with " + process.exitValue() : message};
+        } catch (Exception e) {
+            return new String[]{null, String.valueOf(e.getMessage())};
+        } finally {
+            if (errors != null) errors.delete();
+        }
     }
 
     @Nullable

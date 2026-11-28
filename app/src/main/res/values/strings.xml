@@ -304,6 +304,9 @@
     <string name="action_paste_image_camera">Take a photo…</string>
     <string name="action_attach_document">Attach a document…</string>
     <string name="msg_attach_document">PDF, text, code, Office… · pasted as @path for Claude</string>
+    <string name="msg_attach_ssh_footer">SSH tab: files are uploaded to %1$s first, then its paths are pasted</string>
+    <string name="msg_attach_uploading">Uploading to %1$s…</string>
+    <string name="msg_attach_upload_failed">Couldn\'t upload to %1$s: %2$s\n\nUploads use your SSH key without prompting, like port forwards.</string>
     <string name="msg_paste_image_footer">Images are pasted as a path Claude attaches as [Image #N], files as @path</string>
     <string name="msg_paste_image_no_tab">Open a tab first</string>
     <string name="msg_paste_image_no_app">No app to pick images with</string>
