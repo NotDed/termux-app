@@ -49,7 +49,6 @@ public final class ImagePaste {
     private static final String STATE_CAMERA_URI = "image_paste_camera_uri";
     private static final String STATE_TARGET = "image_paste_target";
 
-    private static final long MAX_BYTES = 20L * 1024 * 1024;
     private static final long KEEP_MS = 7L * 24 * 60 * 60 * 1000;
     private static final File DIR = new File(TermuxConstants.TERMUX_HOME_DIR_PATH, ".cache/pasted-images");
     /** Documents are kept apart from images, under their own (made safe) names. */
@@ -476,45 +475,123 @@ public final class ImagePaste {
         return current != null && current.isRunning() ? current : null;
     }
 
-    /** Copy one image to ~/.cache/pasted-images in a format Claude reads. Returns its path, or null. */
+    /** Largest image the current Claude models take: 2576 px per side and 4784 image tokens (w*h/750). */
+    static final int MAX_EDGE = 2576;
+    static final long MAX_PIXELS = 3_580_000L;
+    /** Claude Code sends at most 5 MB of base64, about 3.75 MB of file. */
+    static final long MAX_FILE = 3_750_000L;
+    /** Guard against filling the disk with something that isn't really an image. */
+    private static final long MAX_RAW = 256L * 1024 * 1024;
+
+    /**
+     * Save one image to ~/.cache/pasted-images at the largest size Claude accepts: kept byte for byte
+     * when it already fits, otherwise resized (and turned upright) and re-encoded. Returns its path, or null.
+     */
     @Nullable
     private static String save(ContentResolver resolver, Uri uri, int index) {
+        File raw = null;
         try {
-            String type = resolver.getType(uri);
-            String extension = extensionFor(type);
+            String extension = extensionFor(resolver.getType(uri));
             DIR.mkdirs();
-            File file = new File(DIR, "img-" + timestamp() + (index > 0 ? "-" + (index + 1) : "") + "." + (extension != null ? extension : "png"));
-            if (extension != null) {
-                try (InputStream in = resolver.openInputStream(uri); OutputStream out = new FileOutputStream(file)) {
-                    if (in == null) return null;
-                    byte[] buffer = new byte[64 * 1024];
-                    long total = 0;
-                    int read;
-                    while ((read = in.read(buffer)) > 0) {
-                        total += read;
-                        if (total > MAX_BYTES) {
-                            out.close();
-                            file.delete();
-                            return null;
-                        }
-                        out.write(buffer, 0, read);
-                    }
-                }
-            } else {
-                // HEIC and other formats Claude doesn't read: convert to PNG
-                Bitmap bitmap;
-                try (InputStream in = resolver.openInputStream(uri)) {
-                    bitmap = in == null ? null : BitmapFactory.decodeStream(in);
-                }
-                if (bitmap == null) return null;
-                try (OutputStream out = new FileOutputStream(file)) {
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
+            String base = "img-" + timestamp() + (index > 0 ? "-" + (index + 1) : "");
+            raw = new File(DIR, "." + base + ".tmp");
+            try (InputStream in = resolver.openInputStream(uri); OutputStream out = new FileOutputStream(raw)) {
+                if (in == null) return null;
+                byte[] buffer = new byte[64 * 1024];
+                long total = 0;
+                int read;
+                while ((read = in.read(buffer)) > 0) {
+                    total += read;
+                    if (total > MAX_RAW) return null;
+                    out.write(buffer, 0, read);
                 }
             }
+
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(raw.getPath(), bounds);
+            int width = bounds.outWidth, height = bounds.outHeight;
+            if (width <= 0 || height <= 0) return null;
+            int orientation = android.media.ExifInterface.ORIENTATION_NORMAL;
+            if ("jpg".equals(extension) || "webp".equals(extension)) {
+                try {
+                    orientation = new android.media.ExifInterface(raw.getPath())
+                        .getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL);
+                } catch (Exception ignored) {}
+            }
+
+            double scale = targetScale(width, height);
+            boolean upright = orientation == android.media.ExifInterface.ORIENTATION_NORMAL
+                || orientation == android.media.ExifInterface.ORIENTATION_UNDEFINED;
+            if (extension != null && scale >= 1 && upright && raw.length() <= MAX_FILE) {
+                File file = new File(DIR, base + "." + extension);
+                return raw.renameTo(file) ? file.getAbsolutePath() : null;
+            }
+
+            // Decode at no more than about twice the target, then scale exactly
+            int targetWidth = Math.max(1, (int) Math.floor(width * Math.min(1, scale)));
+            int targetHeight = Math.max(1, (int) Math.floor(height * Math.min(1, scale)));
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inSampleSize = 1;
+            while (width / (options.inSampleSize * 2) >= targetWidth && height / (options.inSampleSize * 2) >= targetHeight)
+                options.inSampleSize *= 2;
+            Bitmap decoded = BitmapFactory.decodeFile(raw.getPath(), options);
+            if (decoded == null) return null;
+            Bitmap scaled = decoded.getWidth() == targetWidth && decoded.getHeight() == targetHeight ? decoded
+                : Bitmap.createScaledBitmap(decoded, targetWidth, targetHeight, true);
+            if (scaled != decoded) decoded.recycle();
+            Bitmap image = applyOrientation(scaled, orientation);
+            if (image != scaled) scaled.recycle();
+
+            File file = null;
+            if (image.hasAlpha() && !"jpg".equals(extension)) {
+                file = new File(DIR, base + ".png");
+                try (OutputStream out = new FileOutputStream(file)) {
+                    image.compress(Bitmap.CompressFormat.PNG, 100, out);
+                }
+                if (file.length() > MAX_FILE) {
+                    file.delete();
+                    file = null;
+                }
+            }
+            if (file == null) {
+                file = new File(DIR, base + ".jpg");
+                for (int quality : new int[]{92, 85, 75, 60}) {
+                    try (OutputStream out = new FileOutputStream(file)) {
+                        image.compress(Bitmap.CompressFormat.JPEG, quality, out);
+                    }
+                    if (file.length() <= MAX_FILE) break;
+                }
+            }
+            image.recycle();
             return file.length() > 0 ? file.getAbsolutePath() : null;
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // Includes OutOfMemoryError on very large images
             return null;
+        } finally {
+            if (raw != null && raw.exists()) raw.delete();
         }
+    }
+
+    /** How much to shrink a {@code width} x {@code height} image to fit Claude's limits; 1 or more means it fits. */
+    static double targetScale(int width, int height) {
+        return Math.min((double) MAX_EDGE / Math.max(width, height), Math.sqrt((double) MAX_PIXELS / ((double) width * height)));
+    }
+
+    /** Turn the image the way its EXIF orientation says, since re-encoding drops that tag. */
+    private static Bitmap applyOrientation(Bitmap bitmap, int orientation) {
+        android.graphics.Matrix matrix = new android.graphics.Matrix();
+        switch (orientation) {
+            case android.media.ExifInterface.ORIENTATION_FLIP_HORIZONTAL: matrix.setScale(-1, 1); break;
+            case android.media.ExifInterface.ORIENTATION_ROTATE_180: matrix.setRotate(180); break;
+            case android.media.ExifInterface.ORIENTATION_FLIP_VERTICAL: matrix.setScale(1, -1); break;
+            case android.media.ExifInterface.ORIENTATION_TRANSPOSE: matrix.setRotate(90); matrix.postScale(-1, 1); break;
+            case android.media.ExifInterface.ORIENTATION_ROTATE_90: matrix.setRotate(90); break;
+            case android.media.ExifInterface.ORIENTATION_TRANSVERSE: matrix.setRotate(-90); matrix.postScale(-1, 1); break;
+            case android.media.ExifInterface.ORIENTATION_ROTATE_270: matrix.setRotate(-90); break;
+            default: return bitmap;
+        }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
     }
 
     @Nullable

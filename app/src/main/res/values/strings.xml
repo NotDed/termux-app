@@ -311,8 +311,8 @@
     <string name="msg_paste_image_no_tab">Open a tab first</string>
     <string name="msg_paste_image_no_app">No app to pick images with</string>
     <string name="msg_paste_image_no_camera">No camera app available</string>
-    <string name="msg_paste_image_failed">Could not read it (images up to 20 MB, files up to 32 MB)</string>
-    <string name="msg_paste_image_some_failed">Some could not be read and were skipped (images up to 20 MB, files up to 32 MB)</string>
+    <string name="msg_paste_image_failed">Couldn\'t read it (documents up to 32 MB)</string>
+    <string name="msg_paste_image_some_failed">Some could not be read and were skipped (documents up to 32 MB)</string>
     <string name="action_tools_keyboard">⌨ Keyboard</string>
     <string name="msg_tools_keyboard">Show or hide the keyboard</string>
     <string name="feature_group_keyboard">Keyboard</string>
